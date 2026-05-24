@@ -1,4 +1,4 @@
-echo '---
+---
 title: Lab Report Explainer
 emoji: 🩺
 colorFrom: green
@@ -8,5 +8,3 @@ pinned: false
 ---
 
 # Lab Report Plain-Language Explainer
-AI-powered blood test report explainer with plain-language output.
-' > README.md
