@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lab Report Explainer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+ 
+<!-- ── Loading overlay (shown during API calls) ──────────────────────────── -->
+<div id="loading-overlay" class="loading-overlay hidden" role="status" aria-live="polite">
+  <div class="spinner" aria-hidden="true"></div>
+  <p id="loading-text" class="loading-text">Processing…</p>
+  <p id="loading-sub"  class="loading-sub"></p>
+</div>
+ 
+<!-- ── Header bar ─────────────────────────────────────────────────────────── -->
+<header class="header-bar" role="banner">
+  <div class="header-inner">
+    <div>
+      <div class="app-title">Lab report explainer</div>
+      <div class="app-subtitle">Plain-language summaries of your blood test results</div>
+    </div>
+    <span id="status-dot" class="status-dot" title="Backend status"></span>
+  </div>
+</header>
+ 
+<!-- ── Page content ───────────────────────────────────────────────────────── -->
+<main class="page-wrapper" role="main">
+ 
+  <!-- Error banner (hidden by default) -->
+  <div id="error-banner" class="error-banner hidden" role="alert"></div>
+ 
+  <!-- ── Upload section ───────────────────────────────────────────────────── -->
+  <section class="upload-section" aria-label="Upload your report">
+    <h2 class="section-heading">Upload your report</h2>
+ 
+    <div id="upload-area" class="upload-area" role="button" tabindex="0"
+         aria-label="Click to upload PDF or drag and drop">
+      <div class="upload-icon" aria-hidden="true">📄</div>
+      <p id="upload-text" class="upload-text">Click to upload or drag and drop your PDF</p>
+      <p class="upload-hint">Supports any Indian lab format — SRL, Thyrocare, Dr. Lal, Apollo, Metropolis</p>
+      <p id="upload-filename" class="upload-filename hidden"></p>
+    </div>
+ 
+    <!-- Hidden file input — triggered by clicking upload area -->
+    <input type="file" id="file-input" accept=".pdf" style="display:none" aria-hidden="true" />
+ 
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" for="age-input">Age</label>
+        <input type="number" id="age-input" min="1" max="120"
+               placeholder="e.g. 45" aria-label="Patient age" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="gender-input">Biological sex</label>
+        <select id="gender-input" aria-label="Biological sex">
+          <option value="">Select</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+      </div>
+    </div>
+ 
+    <button id="analyze-btn" class="btn-primary" disabled
+            aria-label="Analyze uploaded report">
+      Analyze report
+    </button>
+  </section>
+ 
+  <hr class="section-divider" />
+ 
+  <!-- ── Language + view toggles (hidden until results exist) ─────────────── -->
+  <div id="toggle-row" class="toggle-row hidden" role="toolbar" aria-label="Display options">
+ 
+    <span class="toggle-label">Language:</span>
+    <div class="toggle-group" role="group" aria-label="Select language">
+      <button class="btn-toggle lang-btn active" data-lang="english"  aria-pressed="true">English</button>
+      <button class="btn-toggle lang-btn"         data-lang="hindi"    aria-pressed="false">Hindi</button>
+      <button class="btn-toggle lang-btn"         data-lang="punjabi"  aria-pressed="false">Punjabi</button>
+    </div>
+ 
+    <span class="toggle-label" style="margin-left: 12px;">View as:</span>
+    <div class="toggle-group" role="group" aria-label="Select view mode">
+      <button class="btn-toggle view-btn active" data-mode="patient" aria-pressed="true">Patient</button>
+      <button class="btn-toggle view-btn"         data-mode="doctor"  aria-pressed="false">Doctor</button>
+    </div>
+  </div>
+ 
+  <!-- ── Results section (hidden until analyze completes) ─────────────────── -->
+  <section id="results-section" class="hidden" aria-label="Test results">
+ 
+    <!-- Summary stats -->
+    <div id="results-summary" class="results-summary hidden">
+      <div class="summary-stat">
+        <div id="stat-total"   class="summary-num">—</div>
+        <div class="summary-stat-label">Total tests</div>
+      </div>
+      <div class="summary-stat">
+        <div id="stat-normal"  class="summary-num normal">—</div>
+        <div class="summary-stat-label">Normal</div>
+      </div>
+      <div class="summary-stat">
+        <div id="stat-caution" class="summary-num caution">—</div>
+        <div class="summary-stat-label">Caution</div>
+      </div>
+      <div class="summary-stat">
+        <div id="stat-danger"  class="summary-num danger">—</div>
+        <div class="summary-stat-label">Needs attention</div>
+      </div>
+    </div>
+ 
+    <!-- Test cards (rendered by JS) -->
+    <div id="test-cards" aria-label="Individual test results"></div>
+ 
+    <!-- Doctor questions consolidated card -->
+    <div id="doctor-questions-card" class="doctor-questions-card hidden"
+         aria-label="Questions to ask your doctor">
+      <h3 class="section-heading">Questions to ask your doctor</h3>
+      <ul id="doctor-q-list" class="doctor-q-list"></ul>
+    </div>
+ 
+  </section>
+ 
+  <!-- ── Chat section (hidden until results exist) ──────────────────────── -->
+  <section id="chat-section" class="chat-section hidden" aria-label="Ask a question about your results">
+    <hr class="section-divider" />
+    <h2 class="section-heading">Ask about your results</h2>
+ 
+    <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-label="Chat messages">
+      <!-- AI welcome message -->
+      <div class="bubble bubble-ai">
+        Hi — I can explain what any of your test values mean in plain language.
+        I cannot diagnose conditions or recommend medication.
+        Ask me anything about your results.
+        <br><br>
+        <em style="font-size:12px;color:var(--c-text-muted)">Always discuss your results with your doctor before making any decisions.</em>
+      </div>
+    </div>
+ 
+    <div class="chat-input-row">
+      <textarea id="chat-input" class="chat-input" rows="1"
+                placeholder="e.g. What does a high HbA1c mean?"
+                aria-label="Your question"></textarea>
+      <button id="send-btn" class="send-btn" aria-label="Send message">Send</button>
+    </div>
+    <p id="chat-turns-note" class="chat-turns-note">8 questions remaining in this session</p>
+  </section>
+ 
+  <!-- ── Compare section ────────────────────────────────────────────────── -->
+  <section class="compare-section" aria-label="Compare two reports">
+    <hr class="section-divider" />
+    <h2 class="section-heading">Compare two reports</h2>
+    <p style="font-size:13px;color:var(--c-text-muted);margin-bottom:12px;">
+      Upload two reports from different dates to see what has improved or worsened.
+    </p>
+ 
+    <div class="compare-upload-row">
+      <div id="compare-area1" class="compare-upload-box"
+           role="button" tabindex="0" aria-label="Upload older report">
+        Older report — click to upload
+      </div>
+      <div id="compare-area2" class="compare-upload-box"
+           role="button" tabindex="0" aria-label="Upload newer report">
+        Newer report — click to upload
+      </div>
+    </div>
+ 
+    <input type="file" id="compare-file1" accept=".pdf" style="display:none" aria-hidden="true" />
+    <input type="file" id="compare-file2" accept=".pdf" style="display:none" aria-hidden="true" />
+ 
+    <button id="compare-btn" class="btn-secondary" disabled
+            aria-label="Compare the two uploaded reports"
+            style="width:100%;padding:10px 20px;font-size:13px;">
+      Compare reports
+    </button>
+ 
+    <!-- Compare results (hidden until compare completes) -->
+    <div id="compare-results" class="hidden" style="margin-top:20px">
+ 
+      <div class="compare-summary">
+        <div class="compare-stat improved">
+          <div id="cmp-improved" class="compare-stat-num">—</div>
+          <div class="compare-stat-label">Improved</div>
+        </div>
+        <div class="compare-stat worsened">
+          <div id="cmp-worsened" class="compare-stat-num">—</div>
+          <div class="compare-stat-label">Worsened</div>
+        </div>
+        <div class="compare-stat stable">
+          <div id="cmp-stable" class="compare-stat-num">—</div>
+          <div class="compare-stat-label">Stable</div>
+        </div>
+      </div>
+ 
+      <div class="compare-table-wrap">
+        <table class="compare-table" aria-label="Comparison of test results">
+          <thead>
+            <tr>
+              <th>Test</th>
+              <th>Before</th>
+              <th>After</th>
+              <th>Previous flag</th>
+              <th>Current flag</th>
+              <th>Change</th>
+            </tr>
+          </thead>
+          <tbody id="compare-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+ 
+  <!-- ── Export section ─────────────────────────────────────────────────── -->
+  <section id="export-section" class="export-section hidden" aria-label="Export results">
+    <hr class="section-divider" />
+    <button id="export-btn" class="btn-secondary"
+            style="width:100%;padding:10px 20px;font-size:13px;"
+            aria-label="Download explained report as PDF">
+      Download report as PDF
+    </button>
+  </section>
+ 
+  <!-- ── Footer disclaimer ──────────────────────────────────────────────── -->
+  <footer class="disclaimer-bar" role="contentinfo">
+    This tool explains test values in plain language. It is not a substitute for medical advice.
+    Always consult a qualified physician before making health decisions.
+  </footer>
+ 
+</main>
+ 
+<script src="app.js"></script>
+</body>
+</html>
+ 
