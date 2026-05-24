@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+google-generativeai
+instructor[google]
+pdf2image
+Pillow
+python-multipart
+python-dotenv
+pydantic
+reportlab
+ 
