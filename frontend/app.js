@@ -2,7 +2,7 @@
 // Pure vanilla JS. No framework. No dependencies.
 // Communicates with FastAPI at API_BASE.
  
-const API_BASE = "http://gagan61-lab-report-explainer.hf.space";
+const API_BASE = "https://gagan61-lab-report-explainer.hf.space";
  
 // ── Application state ─────────────────────────────────────────────────────
 // All state lives here. Never read from DOM for logic decisions.
