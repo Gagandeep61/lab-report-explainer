@@ -8,9 +8,7 @@
  
 import re
 from typing import Optional
-from units import normalize_unit
-from ranges import get_fallback_range, FALLBACK_RANGES
- 
+from units import normalize_unit_alias as normalize_unit 
  
 def parse_reference_range(range_str: str | None) -> tuple[float | None, float | None]:
     """
@@ -157,11 +155,9 @@ def apply_rules(test: dict, age: int, gender: str) -> dict:
     result = dict(test)  # Don't mutate input
  
     # Step 1: Normalize units
-    norm_value, norm_unit = normalize_unit(
-        test.get("test_name", ""),
-        test.get("value"),
-        test.get("unit"),
-    )
+    norm_value = test.get("value")
+    norm_unit = normalize_unit(test.get("unit"))
+    
     result["value"] = norm_value
     result["unit"] = norm_unit
  
@@ -170,10 +166,8 @@ def apply_rules(test: dict, age: int, gender: str) -> dict:
     ref_min, ref_max = parse_reference_range(test.get("reference_range"))
  
     if ref_min is None and ref_max is None:
-        # Report didn't include a range — use fallback
-        fallback = get_fallback_range(test.get("test_name", ""), gender)
-        if fallback:
-            ref_min, ref_max = fallback
+        # No range in report and no fallback — flag logic will skip
+        pass
  
     result["ref_min"] = ref_min
     result["ref_max"] = ref_max

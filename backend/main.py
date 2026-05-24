@@ -267,5 +267,10 @@ async def export_pdf(
 @app.get("/health")
 async def health():
     """Simple health check. Hit this to wake up the server before demo."""
-    return {"status": "ok", "api_key_set": bool(os.getenv("GEMINI_API_KEY"))}
+    return {
+        "status": "ok",
+        "api_key_set": bool(os.getenv("GEMINI_API_KEY")),
+        "model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        "sdk": "google-genai",
+    }
  
