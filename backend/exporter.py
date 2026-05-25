@@ -1,23 +1,100 @@
 # exporter.py — PDF export using reportlab
-# Generates a downloadable PDF report card the user can hand to their doctor.
-# Colors approximate the Sage & Ink palette in RGB for print.
- 
+# Colours approximate the Sage & Ink palette.
+#
+# UNICODE FIX: Helvetica (reportlab default) is Latin-only.
+# Hindi/Punjabi text renders as black squares with Helvetica.
+# This file tries to register NotoSans (installed via Dockerfile fonts-noto).
+# If Noto is unavailable (local dev without the apt package), it falls back
+# gracefully to Helvetica and replaces non-Latin text with a notice.
+
 import io
+import os
+import glob
 from datetime import datetime
- 
+
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
- 
-# ── Color palette (Sage & Ink → RGB for reportlab) ───────────────────────────
-C_PAGE_BG    = colors.HexColor("#F4F7F4")
+
+# ── Unicode font setup ────────────────────────────────────────────────────────
+
+def _register_noto() -> tuple[str, str]:
+    """
+    Try to register NotoSans for Unicode (Hindi/Punjabi) support.
+    NotoSans covers Devanagari and Gurmukhi in addition to Latin.
+
+    Returns (body_font, bold_font) — either NotoSans or Helvetica fallback.
+    Installed in Dockerfile with: apt-get install -y fonts-noto fonts-noto-extra
+
+    Why not just use Helvetica everywhere: Helvetica is a Type1 font
+    with only Latin-1 coverage. Any character outside that range renders
+    as a black square (tofu). Noto ("No Tofu") was designed to fix this.
+    """
+    search_patterns = [
+        "/usr/share/fonts/**/NotoSans-Regular.ttf",
+        "/usr/share/fonts/**/NotoSans_Regular.ttf",
+        "/usr/share/fonts/**/*Noto*Sans*Regular*.ttf",
+    ]
+    bold_patterns = [
+        "/usr/share/fonts/**/NotoSans-Bold.ttf",
+        "/usr/share/fonts/**/NotoSans_Bold.ttf",
+        "/usr/share/fonts/**/*Noto*Sans*Bold*.ttf",
+    ]
+
+    regular_path, bold_path = None, None
+    for p in search_patterns:
+        matches = glob.glob(p, recursive=True)
+        if matches:
+            regular_path = matches[0]
+            break
+    for p in bold_patterns:
+        matches = glob.glob(p, recursive=True)
+        if matches:
+            bold_path = matches[0]
+            break
+
+    if regular_path:
+        try:
+            pdfmetrics.registerFont(TTFont("NotoSans", regular_path))
+            if bold_path:
+                pdfmetrics.registerFont(TTFont("NotoSans-Bold", bold_path))
+            else:
+                pdfmetrics.registerFont(TTFont("NotoSans-Bold", regular_path))
+            return "NotoSans", "NotoSans-Bold"
+        except Exception as e:
+            print(f"[exporter] NotoSans registration failed: {e}. Using Helvetica.")
+
+    return "Helvetica", "Helvetica-Bold"
+
+
+BODY_FONT, BOLD_FONT = _register_noto()
+UNICODE_AVAILABLE = BODY_FONT == "NotoSans"
+
+
+def _safe_text(text: str) -> str:
+    """
+    Ensure text is safe for the active font.
+    If NotoSans is available: pass through (supports Devanagari + Gurmukhi).
+    If only Helvetica: check for non-Latin-1 characters and replace with notice.
+    """
+    if UNICODE_AVAILABLE:
+        return text
+    try:
+        text.encode("latin-1")
+        return text
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return "[Switch to English view for PDF export — Hindi/Punjabi not supported in this PDF.]"
+
+
+# ── Colour palette ────────────────────────────────────────────────────────────
 C_PRIMARY    = colors.HexColor("#1C2B1A")
-C_SECONDARY  = colors.HexColor("#3B6D11")
 C_MUTED      = colors.HexColor("#5F7A5C")
 C_CARD_BG    = colors.HexColor("#EAF3DE")
 C_CARD_BDR   = colors.HexColor("#C0DD97")
@@ -25,260 +102,219 @@ C_CAUTION_BG = colors.HexColor("#FFF8EF")
 C_CAUTION_BD = colors.HexColor("#FAC775")
 C_DANGER_BG  = colors.HexColor("#FFF0F0")
 C_DANGER_BD  = colors.HexColor("#F7C1C1")
+C_PAGE_BG    = colors.HexColor("#F4F7F4")
 C_WHITE      = colors.HexColor("#FFFFFF")
- 
+
 FLAG_COLORS = {
-    "Normal":     (C_CARD_BG, C_CARD_BDR, colors.HexColor("#27500A")),
+    "Normal":     (C_CARD_BG,    C_CARD_BDR,   colors.HexColor("#27500A")),
     "Caution":    (C_CAUTION_BG, C_CAUTION_BD, colors.HexColor("#633806")),
-    "See Doctor": (C_DANGER_BG, C_DANGER_BD, colors.HexColor("#791F1F")),
+    "See Doctor": (C_DANGER_BG,  C_DANGER_BD,  colors.HexColor("#791F1F")),
 }
- 
- 
-def _styles():
-    """Build custom paragraph styles matching Sage & Ink typography."""
-    base = getSampleStyleSheet()
- 
+
+
+def _styles() -> dict:
     return {
-        "title": ParagraphStyle(
-            "title", fontName="Helvetica", fontSize=16, textColor=C_PRIMARY,
-            leading=20, spaceAfter=2,
-        ),
-        "subtitle": ParagraphStyle(
-            "subtitle", fontName="Helvetica", fontSize=11, textColor=C_MUTED,
-            leading=15, spaceAfter=8,
-        ),
-        "section": ParagraphStyle(
-            "section", fontName="Helvetica-Bold", fontSize=12, textColor=C_PRIMARY,
-            leading=16, spaceBefore=12, spaceAfter=6,
-        ),
-        "test_name": ParagraphStyle(
-            "test_name", fontName="Helvetica-Bold", fontSize=10, textColor=C_PRIMARY,
-            leading=14,
-        ),
-        "body": ParagraphStyle(
-            "body", fontName="Helvetica", fontSize=9, textColor=C_PRIMARY,
-            leading=14,
-        ),
-        "muted": ParagraphStyle(
-            "muted", fontName="Helvetica", fontSize=8, textColor=C_MUTED,
-            leading=12,
-        ),
-        "q_item": ParagraphStyle(
-            "q_item", fontName="Helvetica", fontSize=9, textColor=C_PRIMARY,
-            leading=14, leftIndent=10,
-        ),
-        "disclaimer": ParagraphStyle(
-            "disclaimer", fontName="Helvetica-Oblique", fontSize=8, textColor=C_MUTED,
-            leading=12, alignment=TA_CENTER,
-        ),
+        "title":      ParagraphStyle("title",      fontName=BOLD_FONT,  fontSize=16, textColor=C_PRIMARY, leading=20, spaceAfter=2),
+        "subtitle":   ParagraphStyle("subtitle",   fontName=BODY_FONT,  fontSize=11, textColor=C_MUTED,   leading=15, spaceAfter=8),
+        "section":    ParagraphStyle("section",    fontName=BOLD_FONT,  fontSize=12, textColor=C_PRIMARY, leading=16, spaceBefore=12, spaceAfter=6),
+        "test_name":  ParagraphStyle("test_name",  fontName=BOLD_FONT,  fontSize=10, textColor=C_PRIMARY, leading=14),
+        "body":       ParagraphStyle("body",       fontName=BODY_FONT,  fontSize=9,  textColor=C_PRIMARY, leading=14),
+        "muted":      ParagraphStyle("muted",      fontName=BODY_FONT,  fontSize=8,  textColor=C_MUTED,   leading=12),
+        "q_item":     ParagraphStyle("q_item",     fontName=BODY_FONT,  fontSize=9,  textColor=C_PRIMARY, leading=14, leftIndent=10),
+        "disclaimer": ParagraphStyle("disclaimer", fontName=BODY_FONT,  fontSize=8,  textColor=C_MUTED,   leading=12, alignment=TA_CENTER),
+        "notice":     ParagraphStyle("notice",     fontName=BOLD_FONT,  fontSize=9,  textColor=colors.HexColor("#633806"), leading=13,
+                                     backColor=C_CAUTION_BG),
     }
- 
- 
-def _flag_badge_text(flag: str) -> str:
-    symbols = {"Normal": "✓", "Caution": "⚠", "See Doctor": "⚑"}
-    return f"{symbols.get(flag, '')} {flag}"
- 
- 
+
+
+def _badge(flag: str) -> str:
+    return {"Normal": "✓ Normal", "Caution": "⚠ Caution", "See Doctor": "⚑ See Doctor"}.get(flag, flag)
+
+
 def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     """
-    Generate a PDF report card from the analyzed test results.
-    
+    Generate a downloadable PDF summary.
+
     Structure:
-      1. Header — app name, patient info, generation date
-      2. Summary — total tests, how many flagged
-      3. Results table — all tests with values, ranges, flags
-      4. Detailed explanations — for flagged tests only
-      5. Questions to ask your doctor — consolidated list
-      6. Disclaimer footer
-    
-    Returns PDF as bytes (for streaming response in FastAPI).
+      1. Header + patient info
+      2. Unicode notice (if fonts unavailable and non-Latin text detected)
+      3. Summary stats (total / normal / caution / see doctor)
+      4. All results table
+      5. Explanations for flagged tests only
+      6. Consolidated doctor questions
+      7. Disclaimer
     """
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=20 * mm,
-        leftMargin=20 * mm,
-        topMargin=20 * mm,
-        bottomMargin=20 * mm,
-    )
- 
-    s = _styles()
-    story = []
-    age = patient.get("age", "")
-    gender = patient.get("gender", "").capitalize()
-    generated = datetime.now().strftime("%d %B %Y, %I:%M %p")
- 
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=20*mm, leftMargin=20*mm,
+                            topMargin=20*mm,   bottomMargin=20*mm)
+    s       = _styles()
+    story   = []
+    age     = patient.get("age", "")
+    gender  = patient.get("gender", "").capitalize()
+    now_str = datetime.now().strftime("%d %B %Y, %I:%M %p")
+
     # ── Header ────────────────────────────────────────────────────────────────
     story.append(Paragraph("Lab Report — Plain Language Summary", s["title"]))
     story.append(Paragraph(
-        f"Patient: {age} years old, {gender} &nbsp;|&nbsp; Generated: {generated}",
+        f"Patient: {age} years old, {gender} &nbsp;|&nbsp; Generated: {now_str}",
         s["subtitle"]
     ))
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_CARD_BDR, spaceAfter=12))
- 
-    # ── Summary banner ────────────────────────────────────────────────────────
-    total = len(tests)
-    flagged = [t for t in tests if t.get("flag") != "Normal"]
+
+    # ── Unicode notice (only when Helvetica fallback is active + non-Latin detected) ──
+    if not UNICODE_AVAILABLE:
+        has_non_latin = any(
+            not _safe_text(t.get("explanation", "")).startswith("[Switch")
+            for t in tests
+        )
+        non_latin_exists = any(
+            t.get("explanation", "").encode("latin-1", errors="replace") != t.get("explanation", "").encode("latin-1", errors="replace")
+            for t in tests
+        )
+        # Simpler check:
+        def has_non_ascii(t):
+            try:
+                (t.get("explanation", "") + " ".join(t.get("doctor_questions", []))).encode("latin-1")
+                return False
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                return True
+
+        if any(has_non_ascii(t) for t in tests):
+            story.append(Paragraph(
+                "⚠ This report was generated with Hindi or Punjabi explanations. "
+                "PDF export supports English only — switch to English view and re-export for full content.",
+                s["notice"]
+            ))
+            story.append(Spacer(1, 8))
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    total     = len(tests)
     n_caution = sum(1 for t in tests if t.get("flag") == "Caution")
-    n_see_dr = sum(1 for t in tests if t.get("flag") == "See Doctor")
-    n_normal = total - len(flagged)
- 
-    summary_data = [
-        ["Total Tests", "Normal", "Caution", "Needs Attention"],
-        [str(total), str(n_normal), str(n_caution), str(n_see_dr)],
-    ]
-    summary_table = Table(summary_data, colWidths=["25%", "25%", "25%", "25%"])
+    n_danger  = sum(1 for t in tests if t.get("flag") == "See Doctor")
+    n_normal  = total - n_caution - n_danger
+
+    summary_table = Table(
+        [["Total Tests", "Normal", "Caution", "Needs Attention"],
+         [str(total), str(n_normal), str(n_caution), str(n_danger)]],
+        colWidths=["25%","25%","25%","25%"]
+    )
     summary_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), C_CARD_BG),
-        ("TEXTCOLOR", (0, 0), (-1, 0), C_MUTED),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("BACKGROUND", (0, 1), (-1, 1), C_WHITE),
-        ("TEXTCOLOR", (0, 1), (-1, 1), C_PRIMARY),
-        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 1), (-1, 1), 14),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C_CARD_BG, C_WHITE]),
-        ("BOX", (0, 0), (-1, -1), 0.5, C_CARD_BDR),
-        ("INNERGRID", (0, 0), (-1, -1), 0.3, C_CARD_BDR),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("BACKGROUND",   (0,0), (-1,0), C_CARD_BG),
+        ("TEXTCOLOR",    (0,0), (-1,0), C_MUTED),
+        ("FONTNAME",     (0,0), (-1,0), BODY_FONT),
+        ("FONTSIZE",     (0,0), (-1,0), 8),
+        ("BACKGROUND",   (0,1), (-1,1), C_WHITE),
+        ("TEXTCOLOR",    (0,1), (-1,1), C_PRIMARY),
+        ("FONTNAME",     (0,1), (-1,1), BOLD_FONT),
+        ("FONTSIZE",     (0,1), (-1,1), 14),
+        ("ALIGN",        (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+        ("BOX",          (0,0), (-1,-1), 0.5, C_CARD_BDR),
+        ("INNERGRID",    (0,0), (-1,-1), 0.3, C_CARD_BDR),
+        ("TOPPADDING",   (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 6),
     ]))
     story.append(summary_table)
     story.append(Spacer(1, 14))
- 
-    # ── Results table ─────────────────────────────────────────────────────────
-    story.append(Paragraph("All Results", s["section"]))
- 
-    table_header = ["Test", "Value", "Reference Range", "Status"]
-    table_data = [table_header]
- 
+
+    # ── All results table ─────────────────────────────────────────────────────
+    story.append(Paragraph("All results", s["section"]))
     sorted_tests = sorted(tests, key=lambda t: (
-        0 if t.get("flag") == "See Doctor" else
-        1 if t.get("flag") == "Caution" else 2
+        0 if t.get("flag") == "See Doctor" else 1 if t.get("flag") == "Caution" else 2
     ))
- 
+
+    rows = [["Test", "Value", "Reference Range", "Status"]]
     for t in sorted_tests:
-        flag = t.get("flag", "Normal")
-        _, _, text_color = FLAG_COLORS.get(flag, FLAG_COLORS["Normal"])
-        ref = t.get("reference_range") or (
-            f"{t.get('ref_min', '')}–{t.get('ref_max', '')}" if (t.get("ref_min") or t.get("ref_max")) else "—"
-        )
-        value_str = f"{t.get('value', '—')} {t.get('unit', '')}".strip()
-        table_data.append([
+        ref = (t.get("reference_range")
+               or (f"{t.get('ref_min','')}–{t.get('ref_max','')}"
+                   if (t.get("ref_min") or t.get("ref_max")) else "—"))
+        rows.append([
             t.get("test_name", ""),
-            value_str,
+            f"{t.get('value', '—')} {t.get('unit', '')}".strip(),
             ref,
-            _flag_badge_text(flag),
+            _badge(t.get("flag", "Normal")),
         ])
- 
-    col_widths = ["40%", "20%", "25%", "15%"]
-    results_table = Table(table_data, colWidths=col_widths)
- 
+
+    tbl = Table(rows, colWidths=["40%","20%","25%","15%"])
     row_styles = [
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("BACKGROUND", (0, 0), (-1, 0), C_CARD_BG),
-        ("TEXTCOLOR", (0, 0), (-1, 0), C_MUTED),
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 1), (-1, -1), 8),
-        ("TEXTCOLOR", (0, 1), (-1, -1), C_PRIMARY),
-        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
-        ("ALIGN", (0, 0), (0, -1), "LEFT"),
-        ("BOX", (0, 0), (-1, -1), 0.5, C_CARD_BDR),
-        ("INNERGRID", (0, 0), (-1, -1), 0.3, C_CARD_BDR),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_PAGE_BG]),
+        ("FONTNAME",      (0,0), (-1,0), BOLD_FONT),  ("FONTSIZE",(0,0),(-1,0),8),
+        ("BACKGROUND",    (0,0), (-1,0), C_CARD_BG),  ("TEXTCOLOR",(0,0),(-1,0),C_MUTED),
+        ("FONTNAME",      (0,1), (-1,-1), BODY_FONT), ("FONTSIZE",(0,1),(-1,-1),8),
+        ("TEXTCOLOR",     (0,1), (-1,-1), C_PRIMARY),
+        ("ALIGN",         (1,0), (-1,-1), "CENTER"),  ("ALIGN",(0,0),(0,-1),"LEFT"),
+        ("BOX",           (0,0), (-1,-1), 0.5, C_CARD_BDR),
+        ("INNERGRID",     (0,0), (-1,-1), 0.3, C_CARD_BDR),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),         ("BOTTOMPADDING",(0,0),(-1,-1),5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 6),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [C_WHITE, C_PAGE_BG]),
     ]
- 
-    # Color the status column per flag
     for i, t in enumerate(sorted_tests, start=1):
-        flag = t.get("flag", "Normal")
-        _, _, text_color = FLAG_COLORS.get(flag, FLAG_COLORS["Normal"])
-        row_styles.append(("TEXTCOLOR", (3, i), (3, i), text_color))
-        row_styles.append(("FONTNAME", (3, i), (3, i), "Helvetica-Bold"))
- 
-    results_table.setStyle(TableStyle(row_styles))
-    story.append(results_table)
+        _, _, txt_clr = FLAG_COLORS.get(t.get("flag","Normal"), FLAG_COLORS["Normal"])
+        row_styles += [("TEXTCOLOR",(3,i),(3,i),txt_clr), ("FONTNAME",(3,i),(3,i),BOLD_FONT)]
+    tbl.setStyle(TableStyle(row_styles))
+    story.append(tbl)
     story.append(Spacer(1, 14))
- 
-    # ── Detailed explanations (flagged only) ──────────────────────────────────
+
+    # ── Explanations (flagged tests only) ─────────────────────────────────────
+    flagged = [t for t in tests if t.get("flag") != "Normal"]
     if flagged:
         story.append(HRFlowable(width="100%", thickness=0.5, color=C_CARD_BDR))
         story.append(Spacer(1, 6))
         story.append(Paragraph("What do these results mean?", s["section"]))
- 
+
         for t in flagged:
             flag = t.get("flag", "Normal")
-            bg, border, text_color = FLAG_COLORS.get(flag, FLAG_COLORS["Normal"])
-            test_name = t.get("test_name", "")
-            explanation = t.get("explanation", "")
- 
-            block_data = [[
-                Paragraph(f"<b>{test_name}</b>", s["test_name"]),
-                Paragraph(_flag_badge_text(flag), ParagraphStyle(
-                    "badge_pdf", fontName="Helvetica-Bold", fontSize=8, textColor=text_color
-                )),
-            ]]
-            block_table = Table(block_data, colWidths=["75%", "25%"])
-            block_table.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), bg),
-                ("BOX", (0, 0), (-1, -1), 0.5, border),
-                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            bg, border, txt_clr = FLAG_COLORS.get(flag, FLAG_COLORS["Normal"])
+            exp = _safe_text(t.get("explanation", ""))
+
+            header_tbl = Table([[
+                Paragraph(f"<b>{t.get('test_name','')}</b>", s["test_name"]),
+                Paragraph(_badge(flag), ParagraphStyle("bp", fontName=BOLD_FONT, fontSize=8, textColor=txt_clr)),
+            ]], colWidths=["75%","25%"])
+            header_tbl.setStyle(TableStyle([
+                ("BACKGROUND",(0,0),(-1,-1),bg),("BOX",(0,0),(-1,-1),0.5,border),
+                ("ALIGN",(1,0),(1,0),"RIGHT"),("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+                ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+                ("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),
             ]))
-            story.append(block_table)
- 
-            if explanation:
-                exp_block = Table([[Paragraph(explanation, s["body"])]])
-                exp_block.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), bg),
-                    ("BOX", (0, 0), (-1, -1), 0.5, border),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            story.append(header_tbl)
+
+            if exp:
+                exp_tbl = Table([[Paragraph(exp, s["body"])]])
+                exp_tbl.setStyle(TableStyle([
+                    ("BACKGROUND",(0,0),(-1,-1),bg),("BOX",(0,0),(-1,-1),0.5,border),
+                    ("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),
+                    ("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),8),
                 ]))
-                story.append(exp_block)
- 
+                story.append(exp_tbl)
             story.append(Spacer(1, 6))
- 
-    # ── Questions to ask your doctor ─────────────────────────────────────────
-    all_questions = []
+
+    # ── Doctor questions ──────────────────────────────────────────────────────
+    all_qs = []
     for t in tests:
-        qs = t.get("doctor_questions", [])
-        for q in qs:
-            if q and q not in all_questions:
-                all_questions.append((t.get("test_name", ""), q))
- 
-    if all_questions:
+        for q in (t.get("doctor_questions") or []):
+            if q:
+                all_qs.append((t.get("test_name",""), _safe_text(q)))
+
+    if all_qs:
         story.append(HRFlowable(width="100%", thickness=0.5, color=C_CARD_BDR))
         story.append(Spacer(1, 6))
         story.append(Paragraph("Questions to ask your doctor", s["section"]))
- 
-        for test_name, q in all_questions:
-            story.append(Paragraph(f"• [{test_name}] {q}", s["q_item"]))
+        for tname, q in all_qs:
+            story.append(Paragraph(f"• [{tname}] {q}", s["q_item"]))
             story.append(Spacer(1, 3))
- 
+
     # ── Disclaimer ────────────────────────────────────────────────────────────
     story.append(Spacer(1, 16))
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_CARD_BDR))
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        "This report is generated for educational purposes only. It is not a medical diagnosis. "
+        "This report is for educational purposes only. It is not a medical diagnosis. "
         "Always consult a qualified physician before making any health decisions.",
         s["disclaimer"]
     ))
- 
+
     doc.build(story)
     buffer.seek(0)
     return buffer.read()
- 
