@@ -22,9 +22,23 @@ jobs:
       - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git remote add hf https://gagan61:$HF_TOKEN@huggingface.co/spaces/gagan61/lab-report-explainer
+        run: |          
+          # 1. Setup Git identity
+          git config --global user.email "actions@github.com"          
+          git config --global user.name "GitHub Actions"          
+          
+          # 2. Combine the HF config and your clean README into a temporary file
+          cat .github/hf-config.txt README.md > README_HF.md
+          
+          # 3. Overwrite the runner's README with the combined version
+          mv README_HF.md README.md
+          
+          # 4. Commit the change locally on the runner
+          git add README.md
+          git commit -m "chore: inject Hugging Face configuration"
+          
+          # 5. Push the modified code to Hugging Face
+          git remote add hf https://gagan61:$HF_TOKEN@huggingface.co/spaces/gagan61/lab-report-explainer          
           git push hf main --force
+
  
