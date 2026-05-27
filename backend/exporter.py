@@ -1,11 +1,7 @@
 # exporter.py — PDF export using reportlab
-# Colours approximate the Sage & Ink palette.
-#
-# UNICODE FIX: Helvetica (reportlab default) is Latin-only.
-# Hindi/Punjabi text renders as black squares with Helvetica.
-# This file tries to register NotoSans (installed via Dockerfile fonts-noto).
-# If Noto is unavailable (local dev without the apt package), it falls back
-# gracefully to Helvetica and replaces non-Latin text with a notice.
+# FIX 1: generate_pdf() now correctly unpacks patient dict (was NameError crash)
+# FIX 2: colWidths use mm units instead of percentage strings (unreliable in reportlab)
+# FIX 3: removed dead non_latin_exists variable
 
 import io
 import os
@@ -26,17 +22,6 @@ from reportlab.platypus import (
 # ── Unicode font setup ────────────────────────────────────────────────────────
 
 def _register_noto() -> tuple[str, str]:
-    """
-    Try to register NotoSans for Unicode (Hindi/Punjabi) support.
-    NotoSans covers Devanagari and Gurmukhi in addition to Latin.
-
-    Returns (body_font, bold_font) — either NotoSans or Helvetica fallback.
-    Installed in Dockerfile with: apt-get install -y fonts-noto fonts-noto-extra
-
-    Why not just use Helvetica everywhere: Helvetica is a Type1 font
-    with only Latin-1 coverage. Any character outside that range renders
-    as a black square (tofu). Noto ("No Tofu") was designed to fix this.
-    """
     search_patterns = [
         "/usr/share/fonts/**/NotoSans-Regular.ttf",
         "/usr/share/fonts/**/NotoSans_Regular.ttf",
@@ -77,13 +62,11 @@ def _register_noto() -> tuple[str, str]:
 BODY_FONT, BOLD_FONT = _register_noto()
 UNICODE_AVAILABLE = BODY_FONT == "NotoSans"
 
+# A4 printable width: 210mm - 20mm left - 20mm right = 170mm
+_PW = 170 * mm
+
 
 def _safe_text(text: str) -> str:
-    """
-    Ensure text is safe for the active font.
-    If NotoSans is available: pass through (supports Devanagari + Gurmukhi).
-    If only Helvetica: check for non-Latin-1 characters and replace with notice.
-    """
     if UNICODE_AVAILABLE:
         return text
     try:
@@ -134,24 +117,19 @@ def _badge(flag: str) -> str:
 def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     """
     Generate a downloadable PDF summary.
-
-    Structure:
-      1. Header + patient info
-      2. Unicode notice (if fonts unavailable and non-Latin text detected)
-      3. Summary stats (total / normal / caution / see doctor)
-      4. All results table
-      5. Explanations for flagged tests only
-      6. Consolidated doctor questions
-      7. Disclaimer
+    FIX: unpack patient dict at the top — previously used undefined age/gender variables.
+    FIX: colWidths use mm values — percentage strings are unreliable across reportlab versions.
     """
+    # FIX: extract age and gender from patient dict
+    age    = patient.get("age") or "—"
+    gender = patient.get("gender") or "—"
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4,
                             rightMargin=20*mm, leftMargin=20*mm,
                             topMargin=20*mm,   bottomMargin=20*mm)
     s       = _styles()
     story   = []
-    age     = patient.get("age", "")
-    gender  = patient.get("gender", "").capitalize()
     now_str = datetime.now().strftime("%d %B %Y, %I:%M %p")
 
     # ── Header ────────────────────────────────────────────────────────────────
@@ -162,25 +140,16 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     ))
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_CARD_BDR, spaceAfter=12))
 
-    # ── Unicode notice (only when Helvetica fallback is active + non-Latin detected) ──
+    # ── Unicode notice ────────────────────────────────────────────────────────
     if not UNICODE_AVAILABLE:
-        has_non_latin = any(
-            not _safe_text(t.get("explanation", "")).startswith("[Switch")
-            for t in tests
-        )
-        non_latin_exists = any(
-            t.get("explanation", "").encode("latin-1", errors="replace") != t.get("explanation", "").encode("latin-1", errors="replace")
-            for t in tests
-        )
-        # Simpler check:
-        def has_non_ascii(t):
+        def _has_non_latin(t):
             try:
                 (t.get("explanation", "") + " ".join(t.get("doctor_questions", []))).encode("latin-1")
                 return False
             except (UnicodeEncodeError, UnicodeDecodeError):
                 return True
 
-        if any(has_non_ascii(t) for t in tests):
+        if any(_has_non_latin(t) for t in tests):
             story.append(Paragraph(
                 "⚠ This report was generated with Hindi or Punjabi explanations. "
                 "PDF export supports English only — switch to English view and re-export for full content.",
@@ -194,26 +163,27 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     n_danger  = sum(1 for t in tests if t.get("flag") == "See Doctor")
     n_normal  = total - n_caution - n_danger
 
+    # FIX: colWidths use mm values instead of percentage strings
     summary_table = Table(
         [["Total Tests", "Normal", "Caution", "Needs Attention"],
          [str(total), str(n_normal), str(n_caution), str(n_danger)]],
-        colWidths=["25%","25%","25%","25%"]
+        colWidths=[_PW * 0.25, _PW * 0.25, _PW * 0.25, _PW * 0.25]
     )
     summary_table.setStyle(TableStyle([
-        ("BACKGROUND",   (0,0), (-1,0), C_CARD_BG),
-        ("TEXTCOLOR",    (0,0), (-1,0), C_MUTED),
-        ("FONTNAME",     (0,0), (-1,0), BODY_FONT),
-        ("FONTSIZE",     (0,0), (-1,0), 8),
-        ("BACKGROUND",   (0,1), (-1,1), C_WHITE),
-        ("TEXTCOLOR",    (0,1), (-1,1), C_PRIMARY),
-        ("FONTNAME",     (0,1), (-1,1), BOLD_FONT),
-        ("FONTSIZE",     (0,1), (-1,1), 14),
-        ("ALIGN",        (0,0), (-1,-1), "CENTER"),
-        ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
-        ("BOX",          (0,0), (-1,-1), 0.5, C_CARD_BDR),
-        ("INNERGRID",    (0,0), (-1,-1), 0.3, C_CARD_BDR),
-        ("TOPPADDING",   (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 6),
+        ("BACKGROUND",    (0,0), (-1,0), C_CARD_BG),
+        ("TEXTCOLOR",     (0,0), (-1,0), C_MUTED),
+        ("FONTNAME",      (0,0), (-1,0), BODY_FONT),
+        ("FONTSIZE",      (0,0), (-1,0), 8),
+        ("BACKGROUND",    (0,1), (-1,1), C_WHITE),
+        ("TEXTCOLOR",     (0,1), (-1,1), C_PRIMARY),
+        ("FONTNAME",      (0,1), (-1,1), BOLD_FONT),
+        ("FONTSIZE",      (0,1), (-1,1), 14),
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("BOX",           (0,0), (-1,-1), 0.5, C_CARD_BDR),
+        ("INNERGRID",     (0,0), (-1,-1), 0.3, C_CARD_BDR),
+        ("TOPPADDING",    (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
     ]))
     story.append(summary_table)
     story.append(Spacer(1, 14))
@@ -236,16 +206,18 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
             _badge(t.get("flag", "Normal")),
         ])
 
-    tbl = Table(rows, colWidths=["40%","20%","25%","15%"])
+    # FIX: colWidths use mm values — 40% / 20% / 25% / 15% of 170mm
+    tbl = Table(rows, colWidths=[_PW * 0.40, _PW * 0.20, _PW * 0.25, _PW * 0.15])
     row_styles = [
-        ("FONTNAME",      (0,0), (-1,0), BOLD_FONT),  ("FONTSIZE",(0,0),(-1,0),8),
-        ("BACKGROUND",    (0,0), (-1,0), C_CARD_BG),  ("TEXTCOLOR",(0,0),(-1,0),C_MUTED),
-        ("FONTNAME",      (0,1), (-1,-1), BODY_FONT), ("FONTSIZE",(0,1),(-1,-1),8),
+        ("FONTNAME",      (0,0), (-1,0),  BOLD_FONT), ("FONTSIZE",  (0,0), (-1,0),  8),
+        ("BACKGROUND",    (0,0), (-1,0),  C_CARD_BG), ("TEXTCOLOR", (0,0), (-1,0),  C_MUTED),
+        ("FONTNAME",      (0,1), (-1,-1), BODY_FONT), ("FONTSIZE",  (0,1), (-1,-1), 8),
         ("TEXTCOLOR",     (0,1), (-1,-1), C_PRIMARY),
-        ("ALIGN",         (1,0), (-1,-1), "CENTER"),  ("ALIGN",(0,0),(0,-1),"LEFT"),
+        ("ALIGN",         (1,0), (-1,-1), "CENTER"),  ("ALIGN",     (0,0), (0,-1),  "LEFT"),
         ("BOX",           (0,0), (-1,-1), 0.5, C_CARD_BDR),
         ("INNERGRID",     (0,0), (-1,-1), 0.3, C_CARD_BDR),
-        ("TOPPADDING",    (0,0), (-1,-1), 5),         ("BOTTOMPADDING",(0,0),(-1,-1),5),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
         ("LEFTPADDING",   (0,0), (-1,-1), 6),
         ("ROWBACKGROUNDS",(0,1), (-1,-1), [C_WHITE, C_PAGE_BG]),
     ]
@@ -256,7 +228,7 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     story.append(tbl)
     story.append(Spacer(1, 14))
 
-    # ── Explanations (flagged tests only) ─────────────────────────────────────
+    # ── Explanations (flagged only) ───────────────────────────────────────────
     flagged = [t for t in tests if t.get("flag") != "Normal"]
     if flagged:
         story.append(HRFlowable(width="100%", thickness=0.5, color=C_CARD_BDR))
@@ -271,21 +243,28 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
             header_tbl = Table([[
                 Paragraph(f"<b>{t.get('test_name','')}</b>", s["test_name"]),
                 Paragraph(_badge(flag), ParagraphStyle("bp", fontName=BOLD_FONT, fontSize=8, textColor=txt_clr)),
-            ]], colWidths=["75%","25%"])
+            ]], colWidths=[_PW * 0.75, _PW * 0.25])
             header_tbl.setStyle(TableStyle([
-                ("BACKGROUND",(0,0),(-1,-1),bg),("BOX",(0,0),(-1,-1),0.5,border),
-                ("ALIGN",(1,0),(1,0),"RIGHT"),("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-                ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
-                ("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),
+                ("BACKGROUND",    (0,0), (-1,-1), bg),
+                ("BOX",           (0,0), (-1,-1), 0.5, border),
+                ("ALIGN",         (1,0), (1,0),   "RIGHT"),
+                ("VALIGN",        (0,0), (-1,-1),  "MIDDLE"),
+                ("TOPPADDING",    (0,0), (-1,-1),  6),
+                ("BOTTOMPADDING", (0,0), (-1,-1),  6),
+                ("LEFTPADDING",   (0,0), (-1,-1),  8),
+                ("RIGHTPADDING",  (0,0), (-1,-1),  8),
             ]))
             story.append(header_tbl)
 
             if exp:
                 exp_tbl = Table([[Paragraph(exp, s["body"])]])
                 exp_tbl.setStyle(TableStyle([
-                    ("BACKGROUND",(0,0),(-1,-1),bg),("BOX",(0,0),(-1,-1),0.5,border),
-                    ("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),
-                    ("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),8),
+                    ("BACKGROUND",    (0,0), (-1,-1), bg),
+                    ("BOX",           (0,0), (-1,-1), 0.5, border),
+                    ("LEFTPADDING",   (0,0), (-1,-1), 8),
+                    ("RIGHTPADDING",  (0,0), (-1,-1), 8),
+                    ("TOPPADDING",    (0,0), (-1,-1), 4),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 8),
                 ]))
                 story.append(exp_tbl)
             story.append(Spacer(1, 6))

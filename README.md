@@ -12,7 +12,7 @@ pinned: false
  
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-000000?style=for-the-badge&logo=vercel)](https://lab-report-explainer-phi.vercel.app/)
 [![Backend](https://img.shields.io/badge/Backend-HuggingFace%20Spaces-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)](https://gagan61-lab-report-explainer.hf.space)
-[![Deploy to HF](https://img.shields.io/github/actions/workflow/status/gagan61/lab-report-explainer/deploy.yml?style=for-the-badge&label=CI%2FCD&logo=githubactions&logoColor=white)](https://github.com/gagan61/lab-report-explainer/actions)
+[![Deploy to HF](https://img.shields.io/github/actions/workflow/status/gagan61/lab-report-explainer/deploy.yml?style=for-the-badge&label=CI%2FCD&logo=githubactions&logoColor=white)](https://github.com/Gagandeep61/lab-report-explainer/actions)
  
 </div>
 ---
@@ -187,7 +187,7 @@ lab-report-explainer/
  
 ```bash
 # 1. Clone the repository
-git clone https://github.com/gagan61/lab-report-explainer.git
+git clone https://github.com/Gagandeep61/lab-report-explainer.git
 cd lab-report-explainer
  
 # 2. Create virtual environment
@@ -298,8 +298,8 @@ Connecting to a LOINC-compatible reference range API would replace the static fa
  
 **Gagandeep Singh**
  
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=flat&logo=linkedin)](https://linkedin.com/in/yourprofile)
-[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=flat&logo=github)](https://github.com/gagan61)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/gagandeep-singh-517155319)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=flat&logo=github)](https://github.com/Gagandeep61)
  
 ---
  
