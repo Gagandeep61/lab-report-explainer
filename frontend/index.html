@@ -7,35 +7,47 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
- 
-<!-- ── Loading overlay (shown during API calls) ──────────────────────────── -->
+
 <div id="loading-overlay" class="loading-overlay hidden" role="status" aria-live="polite">
   <div class="spinner" aria-hidden="true"></div>
   <p id="loading-text" class="loading-text">Processing…</p>
   <p id="loading-sub"  class="loading-sub"></p>
 </div>
- 
-<!-- ── Header bar ─────────────────────────────────────────────────────────── -->
+
 <header class="header-bar" role="banner">
   <div class="header-inner">
     <div>
       <div class="app-title">Lab report explainer</div>
       <div class="app-subtitle">Plain-language summaries of your blood test results</div>
     </div>
-    <span id="status-dot" class="status-dot" title="Backend status"></span>
+    <span id="status-dot" class="status-dot" role="img" aria-label="Backend status: checking"></span>
   </div>
 </header>
- 
-<!-- ── Page content ───────────────────────────────────────────────────────── -->
+
 <main class="page-wrapper" role="main">
- 
-  <!-- Error banner (hidden by default) -->
+
   <div id="error-banner" class="error-banner hidden" role="alert"></div>
- 
-  <!-- ── Upload section ───────────────────────────────────────────────────── -->
+
+  <!-- ── Single-report upload ─────────────────────────────────────────────── -->
   <section class="upload-section" aria-label="Upload your report">
     <h2 class="section-heading">Upload your report</h2>
- 
+
+    <!-- Demo preset bar -->
+    <div class="demo-bar" role="group" aria-label="Load a sample report for testing">
+      <span class="toggle-label">Try a sample:</span>
+      <select id="demo-select" aria-label="Choose sample report profile">
+        <option value="">— choose profile —</option>
+        <option value="healthy">Healthy Adult (Priya, 25F)</option>
+        <option value="diabetic">Diabetic Pattern (Rajesh, 52M)</option>
+        <option value="lipids">Lipid Issues (Amit, 45M)</option>
+        <option value="anemia">Anaemia + Deficiencies (Sunita, 34F)</option>
+      </select>
+      <button id="demo-load-btn" class="btn-secondary" disabled
+              aria-label="Load selected sample preset">Load preset</button>
+      <a id="demo-pdf-link" class="btn-secondary btn-icon" style="display:none"
+         download aria-label="Download sample PDF for this profile">⬇ Download PDF</a>
+    </div>
+
     <div id="upload-area" class="upload-area" role="button" tabindex="0"
          aria-label="Click to upload PDF or drag and drop">
       <div class="upload-icon" aria-hidden="true">📄</div>
@@ -43,55 +55,32 @@
       <p class="upload-hint">Supports any Indian lab format — SRL, Thyrocare, Dr. Lal, Apollo, Metropolis</p>
       <p id="upload-filename" class="upload-filename hidden"></p>
     </div>
- 
-    <!-- Hidden file input — triggered by clicking upload area -->
+
     <input type="file" id="file-input" accept=".pdf" style="display:none" aria-hidden="true" />
- 
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label" for="age-input">Age</label>
-        <input type="number" id="age-input" min="1" max="120"
-               placeholder="e.g. 45" aria-label="Patient age" />
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="gender-input">Biological sex</label>
-        <select id="gender-input" aria-label="Biological sex">
-          <option value="">Select</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-        </select>
-      </div>
-    </div>
- 
+
     <button id="analyze-btn" class="btn-primary" disabled
             aria-label="Analyze uploaded report">
       Analyze report
     </button>
   </section>
- 
+
   <hr class="section-divider" />
- 
-  <!-- ── Language + view toggles (hidden until results exist) ─────────────── -->
+
   <div id="toggle-row" class="toggle-row hidden" role="toolbar" aria-label="Display options">
- 
     <span class="toggle-label">Language:</span>
     <div class="toggle-group" role="group" aria-label="Select language">
       <button class="btn-toggle lang-btn active" data-lang="english"  aria-pressed="true">English</button>
       <button class="btn-toggle lang-btn"         data-lang="hindi"    aria-pressed="false">Hindi</button>
       <button class="btn-toggle lang-btn"         data-lang="punjabi"  aria-pressed="false">Punjabi</button>
     </div>
- 
     <span class="toggle-label" style="margin-left: 12px;">View as:</span>
     <div class="toggle-group" role="group" aria-label="Select view mode">
       <button class="btn-toggle view-btn active" data-mode="patient" aria-pressed="true">Patient</button>
       <button class="btn-toggle view-btn"         data-mode="doctor"  aria-pressed="false">Doctor</button>
     </div>
   </div>
- 
-  <!-- ── Results section (hidden until analyze completes) ─────────────────── -->
+
   <section id="results-section" class="hidden" aria-label="Test results">
- 
-    <!-- Summary stats -->
     <div id="results-summary" class="results-summary hidden">
       <div class="summary-stat">
         <div id="stat-total"   class="summary-num">—</div>
@@ -110,26 +99,22 @@
         <div class="summary-stat-label">Needs attention</div>
       </div>
     </div>
- 
-    <!-- Test cards (rendered by JS) -->
+
     <div id="test-cards" aria-label="Individual test results"></div>
- 
-    <!-- Doctor questions consolidated card -->
+
     <div id="doctor-questions-card" class="doctor-questions-card hidden"
          aria-label="Questions to ask your doctor">
       <h3 class="section-heading">Questions to ask your doctor</h3>
-      <ul id="doctor-q-list" class="doctor-q-list"></ul>
+      <!-- FIX: role="list" added — VoiceOver strips list semantics when list-style:none is set -->
+      <ul id="doctor-q-list" class="doctor-q-list" role="list"></ul>
     </div>
- 
   </section>
- 
-  <!-- ── Chat section (hidden until results exist) ──────────────────────── -->
+
+  <!-- ── Chat ──────────────────────────────────────────────────────────────── -->
   <section id="chat-section" class="chat-section hidden" aria-label="Ask a question about your results">
     <hr class="section-divider" />
     <h2 class="section-heading">Ask about your results</h2>
- 
-    <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-label="Chat messages">
-      <!-- AI welcome message -->
+    <div id="chat-messages" class="chat-messages" role="log" aria-live="polite">
       <div class="bubble bubble-ai">
         Hi — I can explain what any of your test values mean in plain language.
         I cannot diagnose conditions or recommend medication.
@@ -138,7 +123,6 @@
         <em style="font-size:12px;color:var(--c-text-muted)">Always discuss your results with your doctor before making any decisions.</em>
       </div>
     </div>
- 
     <div class="chat-input-row">
       <textarea id="chat-input" class="chat-input" rows="1"
                 placeholder="e.g. What does a high HbA1c mean?"
@@ -147,38 +131,45 @@
     </div>
     <p id="chat-turns-note" class="chat-turns-note">8 questions remaining in this session</p>
   </section>
- 
-  <!-- ── Compare section ────────────────────────────────────────────────── -->
+
+  <!-- ── Compare two reports ───────────────────────────────────────────────── -->
   <section class="compare-section" aria-label="Compare two reports">
     <hr class="section-divider" />
     <h2 class="section-heading">Compare two reports</h2>
     <p style="font-size:13px;color:var(--c-text-muted);margin-bottom:12px;">
       Upload two reports from different dates to see what has improved or worsened.
     </p>
- 
+
+    <!-- Compare demo bar -->
+    <div class="demo-bar" role="group" aria-label="Load a sample comparison">
+      <span class="toggle-label">Try a sample:</span>
+      <select id="compare-demo-select" aria-label="Choose sample comparison scenario">
+        <option value="">— choose scenario —</option>
+        <option value="diabetes_treatment">Diabetes: Before &amp; After Treatment</option>
+        <option value="lipid_worsening">Lipid Panel: Gradual Worsening</option>
+      </select>
+      <button id="compare-demo-btn" class="btn-secondary" disabled
+              aria-label="Load selected comparison preset">Load preset</button>
+    </div>
+
     <div class="compare-upload-row">
-      <div id="compare-area1" class="compare-upload-box"
-           role="button" tabindex="0" aria-label="Upload older report">
+      <div id="compare-area1" class="compare-upload-box" role="button" tabindex="0"
+           aria-label="Older report — click to upload">
         Older report — click to upload
       </div>
-      <div id="compare-area2" class="compare-upload-box"
-           role="button" tabindex="0" aria-label="Upload newer report">
+      <div id="compare-area2" class="compare-upload-box" role="button" tabindex="0"
+           aria-label="Newer report — click to upload">
         Newer report — click to upload
       </div>
     </div>
- 
     <input type="file" id="compare-file1" accept=".pdf" style="display:none" aria-hidden="true" />
     <input type="file" id="compare-file2" accept=".pdf" style="display:none" aria-hidden="true" />
- 
-    <button id="compare-btn" class="btn-secondary" disabled
-            aria-label="Compare the two uploaded reports"
-            style="width:100%;padding:10px 20px;font-size:13px;">
+
+    <button id="compare-btn" class="btn-secondary btn-wide" disabled>
       Compare reports
     </button>
- 
-    <!-- Compare results (hidden until compare completes) -->
+
     <div id="compare-results" class="hidden" style="margin-top:20px">
- 
       <div class="compare-summary">
         <div class="compare-stat improved">
           <div id="cmp-improved" class="compare-stat-num">—</div>
@@ -193,17 +184,12 @@
           <div class="compare-stat-label">Stable</div>
         </div>
       </div>
- 
       <div class="compare-table-wrap">
-        <table class="compare-table" aria-label="Comparison of test results">
+        <table class="compare-table">
           <thead>
             <tr>
-              <th>Test</th>
-              <th>Before</th>
-              <th>After</th>
-              <th>Previous flag</th>
-              <th>Current flag</th>
-              <th>Change</th>
+              <th>Test</th><th>Before</th><th>After</th>
+              <th>Previous flag</th><th>Current flag</th><th>Change</th>
             </tr>
           </thead>
           <tbody id="compare-tbody"></tbody>
@@ -211,26 +197,23 @@
       </div>
     </div>
   </section>
- 
-  <!-- ── Export section ─────────────────────────────────────────────────── -->
-  <section id="export-section" class="export-section hidden" aria-label="Export results">
+
+  <!-- ── Export ────────────────────────────────────────────────────────────── -->
+  <section id="export-section" class="export-section hidden">
     <hr class="section-divider" />
-    <button id="export-btn" class="btn-secondary"
-            style="width:100%;padding:10px 20px;font-size:13px;"
-            aria-label="Download explained report as PDF">
+    <button id="export-btn" class="btn-secondary btn-wide">
       Download report as PDF
     </button>
   </section>
- 
-  <!-- ── Footer disclaimer ──────────────────────────────────────────────── -->
-  <footer class="disclaimer-bar" role="contentinfo">
+
+  <!-- FIX: removed redundant role="contentinfo" — <footer> has it implicitly -->
+  <footer class="disclaimer-bar">
     This tool explains test values in plain language. It is not a substitute for medical advice.
     Always consult a qualified physician before making health decisions.
   </footer>
- 
+
 </main>
- 
+
 <script src="app.js"></script>
 </body>
 </html>
- 
