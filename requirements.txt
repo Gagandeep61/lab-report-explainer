@@ -1,10 +1,9 @@
 fastapi
 uvicorn[standard]
-google-genai
+openai
 pdf2image
 Pillow
 python-multipart
 python-dotenv
 pydantic
 reportlab
- 

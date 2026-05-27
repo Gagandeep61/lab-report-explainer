@@ -1,153 +1,155 @@
----
-title: Lab Report Explainer
-emoji: 🩺
-colorFrom: green
-colorTo: green
-sdk: docker
-pinned: false
----
-
 <div align="center">
+
 # 🩺 Lab Report Explainer
- 
+
+**Plain-language blood test summaries for Indian patients — in English, Hindi & Punjabi**
+
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-000000?style=for-the-badge&logo=vercel)](https://lab-report-explainer-phi.vercel.app/)
 [![Backend](https://img.shields.io/badge/Backend-HuggingFace%20Spaces-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)](https://gagan61-lab-report-explainer.hf.space)
-[![Deploy to HF](https://img.shields.io/github/actions/workflow/status/gagan61/lab-report-explainer/deploy.yml?style=for-the-badge&label=CI%2FCD&logo=githubactions&logoColor=white)](https://github.com/Gagandeep61/lab-report-explainer/actions)
- 
+[![CI/CD](https://img.shields.io/github/actions/workflow/status/Gagandeep61/lab-report-explainer/deploy.yml?style=for-the-badge&label=CI%2FCD&logo=githubactions&logoColor=white)](https://github.com/Gagandeep61/lab-report-explainer/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+
 </div>
+
 ---
- 
+
 ## 30-Second Pitch
- 
-India conducts over **500 million diagnostic tests annually**, yet most patients receive reports in formats they cannot interpret — dense tables, medical abbreviations, no context. This tool takes any blood test PDF from any Indian lab (SRL, Thyrocare, Dr. Lal, Apollo, Metropolis) and runs it through a complete IDP pipeline: Gemini Vision extracts every test row, a deterministic rules engine flags each value against its printed reference range, and a batch LLM call generates 2-sentence plain-language explanations — in English, Hindi, or Punjabi. The result is a structured report card, a chat interface, and a downloadable PDF summary the patient can hand to their doctor.
- 
+
+India runs **500 million+ diagnostic tests per year**.<sup>[1]</sup> Most reports return as a wall of numbers with no explanation. Fewer than 40% of patients have the health literacy to interpret them,<sup>[2]</sup> and with doctor consultations averaging 8–12 minutes, there is no time to explain every value.
+
+This tool takes any blood test PDF from any major Indian lab — SRL, Thyrocare, Dr. Lal, Apollo, Metropolis — and runs it through a complete IDP pipeline: Gemini Vision extracts every test row, a **deterministic Python rules engine** flags each value, and a single batch LLM call generates plain-language explanations in the patient's preferred language. Result: a structured report card, a bounded chat interface, and a downloadable PDF summary — all in under 60 seconds, at zero API cost.
+
+<sup>[1] NATHEALTH India Healthcare Report 2023 | [2] National Health Literacy Survey, India 2022</sup>
+
 ---
- 
+
 ## ⚡ Quick Stats
- 
-| | |
+
+| Metric | Value |
 |---|---|
 | **Labs supported** | SRL · Thyrocare · Dr. Lal PathLabs · Apollo · Metropolis · any structured PDF |
 | **Languages** | English · Hindi (Devanagari) · Punjabi (Gurmukhi) |
-| **Avg. analysis time** | ~20 seconds end-to-end |
-| **Gemini calls per report** | 2 — one Vision extraction, one batch explanation |
-| **Plausibility bounds** | 25 common tests (catches hallucinated values) |
+| **API cost** | ₹0 — runs entirely on OpenRouter free-tier models |
+| **LLM calls per report** | 2 — one Vision extraction, one batch explanation |
+| **Average response time** | 25–40 seconds end-to-end |
 | **Fallback reference ranges** | 30 common tests (gender-aware) |
-| **Chat limit** | 8 turns per session with medical guardrails |
-| **PDF export** | Unicode-safe — renders Hindi and Punjabi correctly |
- 
+| **Plausibility bounds** | 25 common tests (catches hallucinated values) |
+| **Chat limit** | 8 turns per session, guardrails enforced server-side |
+| **PDF export** | Unicode-safe — Hindi & Punjabi render correctly |
+
 ---
- 
+
 ## 🔴 The Problem
- 
-India conducts over 500 million diagnostic tests per year, yet studies show that **fewer than 40% of patients understand their lab results** without physician guidance.<sup>[1]</sup> With average doctor consultations lasting under 5 minutes in public healthcare,<sup>[2]</sup> patients leave clinics holding reports they cannot interpret — often turning to unverified sources that cause unnecessary anxiety or, worse, missed warnings.
- 
-The gap is widest for non-English speakers: with **560 million Hindi speakers** and 33 million Punjabi speakers in India, health literacy tools that operate only in English exclude the majority of the population.
- 
-<sup>[1] National Health Literacy Survey, India 2022 | [2] Lancet, Primary care consultation length in India</sup>
- 
+
+| Problem | Scale |
+|---|---|
+| Patients receive reports they cannot read | 500M+ tests/year in India |
+| Hindi/Punjabi speakers excluded by English-only tools | 560M Hindi speakers · 33M Punjabi speakers |
+| Doctors have no time to explain every value | 8–12 min avg. consultation |
+| Patients miss early warning signs due to literacy gap | Preventable complications · late diagnoses |
+
+This tool bridges the gap between a lab number and a patient decision.
+
 ---
- 
-## ✅ What This Builds
- 
-A complete Intelligent Document Processing (IDP) pipeline — not a chatbot, not a prediction model. A data pipeline that transforms unstructured medical PDFs into structured, actionable, human-readable summaries.
- 
+
+## ✅ Features
+
+| Feature | Detail |
+|---|---|
+| **Universal PDF extraction** | Any Indian lab format — multi-page, comma-formatted numbers, descriptive zone labels |
+| **3-layer validation** | Schema enforcement → negative value rejection → physiological plausibility bounds |
+| **Deterministic flagging** | Normal / Caution / See Doctor — pure Python rules engine, zero LLM arithmetic |
+| **Visual gauge bars** | Per-test fill bar showing value relative to reference range |
+| **Patient view** | 2 plain sentences per test — no jargon, no diagnosis |
+| **Doctor view** | 3 clinical bullet points — value + deviation + aetiology + next step |
+| **Language toggle** | English / Hindi / Punjabi — re-calls `/explain`, no re-extraction |
+| **Bounded RAG chat** | 8-turn cap, guardrails enforced server-side in Python (not just prompt) |
+| **Two-report comparison** | Diff table: improved / worsened / stable per test |
+| **Doctor questions** | Consolidated list of specific questions for flagged tests only |
+| **PDF export** | Unicode-safe downloadable report card |
+| **Demo presets** | 4 JSON presets (no API cost) + 4 downloadable sample PDFs for full pipeline testing |
+
+---
+
+## 🏗️ Architecture
+
 ```
 PDF (any Indian lab format)
-    ↓ Gemini Vision   →  Structured JSON extraction (schema-enforced via Pydantic)
-    ↓ Rules engine    →  Deterministic flag: Normal / Caution / See Doctor
-    ↓ Gemini Flash    →  Plain-language explanation (English / Hindi / Punjabi)
-    ↓ UI              →  Report card + chat + comparison + PDF export
+    ↓  extractor.py   →  pdf2image → Gemini Vision → Pydantic 3-layer validation
+    ↓  rules.py       →  Deterministic flag: Normal / Caution / See Doctor  (zero LLM)
+    ↓  explainer.py   →  Batch explanation — 1 call for all tests · English / Hindi / Punjabi
+    ↓  Frontend       →  Report cards · gauge bars · RAG chat · comparison · PDF export
 ```
- 
----
- 
-## ✨ Features
- 
-| Feature | Description |
-|---|---|
-| **Universal PDF extraction** | Works on any Indian lab table layout — no format-specific regex |
-| **3-layer validation** | Schema enforcement → negative value rejection → physiological plausibility bounds |
-| **Deterministic flagging** | Rules engine (not LLM) compares every value to its own printed reference range |
-| **Plain-language explanations** | 2-sentence patient view or 3-bullet clinical brief for doctors |
-| **Patient vs Doctor view** | Toggle between plain English and clinical terminology mid-session |
-| **Hindi / Punjabi output** | Full multilingual support via Gemini's native language capability |
-| **Bounded RAG chat** | Ask questions about results — 8-turn cap, medical guardrails enforced in Python |
-| **Two-report comparison** | Upload two reports → see what improved, worsened, or stayed the same |
-| **PDF export** | Downloadable report card with Unicode font support for all three languages |
- 
----
- 
-## 🏗️ Architecture
- 
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (Vercel)                     │
-│          HTML · CSS (Sage & Ink) · Vanilla JS           │
-└──────────────────────┬──────────────────────────────────┘
-                       │ HTTPS REST
-┌──────────────────────▼──────────────────────────────────┐
-│                 Backend (HF Spaces · Docker)             │
-│                      FastAPI + Python                    │
-│                                                         │
-│  ┌─────────────┐   ┌────────────┐   ┌────────────────┐  │
-│  │ extractor   │   │   rules    │   │   explainer    │  │
-│  │             │   │   engine   │   │                │  │
-│  │ pdf2image   │   │            │   │ Gemini Flash   │  │
-│  │ Gemini VLM  │──▶│ No LLM     │──▶│ Batch prompts  │  │
-│  │ Pydantic    │   │ Pure Python│   │ Guardrails     │  │
-│  │ 3-layer     │   │ Determinism│   │ Language param │  │
-│  │ validation  │   │            │   │                │  │
-│  └─────────────┘   └────────────┘   └────────────────┘  │
-│                                                         │
-│  ┌─────────────┐   ┌────────────────────────────────┐   │
-│  │ exporter    │   │         ranges_fallback         │   │
-│  │             │   │                                │   │
-│  │ reportlab   │   │ Fallback reference ranges for  │   │
-│  │ Noto fonts  │   │ 30 common tests (gender-aware) │   │
-│  │ Unicode PDF │   │ Used only when PDF has no range│   │
-│  └─────────────┘   └────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-                       │
-                  Google Gemini API
-              (gemini-2.5-flash · free tier)
+┌──────────────────────────────────────────────────────────┐
+│                    Frontend (Vercel)                      │
+│           HTML · CSS (Sage & Ink) · Vanilla JS           │
+└─────────────────────┬────────────────────────────────────┘
+                      │  HTTPS REST
+┌─────────────────────▼────────────────────────────────────┐
+│               Backend (HF Spaces · Docker)                │
+│                    FastAPI + Python 3.11                  │
+│                                                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │ extractor   │  │    rules     │  │    explainer    │  │
+│  │ pdf2image   │  │              │  │                 │  │
+│  │ Gemini VLM  │─▶│  Pure Python │─▶│  Gemini Flash   │  │
+│  │ Pydantic    │  │  No LLM      │  │  Batch prompts  │  │
+│  │ 3-layer val │  │  Determinism │  │  Guardrails     │  │
+│  └─────────────┘  └──────────────┘  └─────────────────┘  │
+│                                                          │
+│  ┌─────────────┐  ┌──────────────────────────────────┐   │
+│  │  exporter   │  │        ranges_fallback            │   │
+│  │  reportlab  │  │  30 common tests · gender-aware  │   │
+│  │  Noto fonts │  │  Used only when PDF omits range  │   │
+│  └─────────────┘  └──────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────┘
+                      │
+               OpenRouter API
+       (Gemini Vision · Gemini 2.5 Flash · free tier)
 ```
- 
+
 ### Key Architectural Decisions
- 
-**Why Gemini Vision instead of OCR + regex?**
-Every Indian lab prints tables differently — different column orders, merged cells, invisible borders. A regex pattern that works on SRL breaks on Thyrocare, which breaks on Dr. Lal. Gemini Vision understands spatial relationships natively. One prompt handles every format variation without a single hardcoded column index.
- 
+
+**Why OpenRouter instead of direct Gemini API?**
+OpenRouter provides a single SDK and unified error handling across models. Switching extraction models requires changing one string — same retry logic, same interface. It also enables seamless fallback to alternative vision models without touching the rest of the pipeline.
+
 **Why is the rules engine separate from the LLM?**
-LLMs hallucinate arithmetic. If blood sugar is 105 and the normal max is 100, an LLM might flag it correctly, or it might decide 105 is fine. `105 > 100` should never be evaluated probabilistically in a medical context. The LLM extracts text and generates explanations. Python decides what is normal. This boundary is what makes the app safe enough to deploy.
- 
+LLMs hallucinate arithmetic. `105 > 100` should never be evaluated probabilistically in a medical context. The LLM extracts text and generates explanations. Python decides what is normal. This boundary is what makes the app safe enough to deploy.
+
 **Why batch all explanations in one API call?**
-A 20-test report processed one call per test = 20 RPM hits against a 10 RPM limit. One batch call = 1 RPM hit. The prompt passes all tests as a JSON array and returns all explanations in a single response — same quality, 20× fewer API requests, stays well within free-tier quota.
- 
+A 20-test report processed one call per test = 20 RPM hits. One batch call = 1 RPM hit, identical output quality, stays within free-tier quota. Free-tier constraints shaped the API design from the start — not retrofitted.
+
 **Why extract reference ranges from the report itself?**
-Lab machines are calibrated for local populations and print their own reference ranges on every report. These are more accurate than any hardcoded dictionary. `ranges_fallback.py` exists only for PDFs that omit the range column.
- 
+Lab machines are calibrated per instrument batch. Thyrocare's TSH range differs from SRL's. The rules engine reads the printed range from the PDF first. `ranges_fallback.py` is used only when the PDF omits a range column entirely.
+
+**Why 3-layer validation on extracted data?**
+A single validation layer is not enough when the source is an LLM. Schema enforcement catches structural errors. Pydantic field validators catch type errors (negative haemoglobin from a misread dash). A physiological plausibility dictionary catches values that pass the schema but are physiologically impossible — haemoglobin of 1400 g/dL from misreading the platelet column. Each layer catches a different class of failure.
+
 ---
- 
+
 ## 🛠️ Tech Stack
- 
-| Layer | Technology | Why |
+
+| Layer | Choice | Why |
 |---|---|---|
-| LLM | Gemini 2.5 Flash (google-genai) | Free tier · multimodal · multilingual · native JSON schema output |
-| Backend | FastAPI + Python 3.11 | Async endpoints · automatic OpenAPI docs · Pydantic integration |
-| Data validation | Pydantic + `response_schema` | Schema enforcement at model level — no manual JSON parsing |
-| PDF → Image | pdf2image + poppler | PIL Images passed directly to Gemini Vision |
-| PDF generation | reportlab + Noto fonts | Unicode support for Hindi/Punjabi in exported PDFs |
-| Frontend | Vanilla HTML / CSS / JS | No build step · instant deploy · zero dependencies |
-| Design system | Sage & Ink (custom) | Warm, earthy, non-generic — designed for health literacy contexts |
-| Backend hosting | Hugging Face Spaces (Docker) | Free · persistent · full Dockerfile control |
-| Frontend hosting | Vercel | Free · instant CDN · GitHub auto-deploy |
-| CI/CD | GitHub Actions | Push to main → auto-deploy to HF Spaces |
- 
+| **LLM — Extraction** | `google/gemini-2.0-flash-exp:free` via OpenRouter | Free tier · vision support · 200 RPD |
+| **LLM — Explanation/Chat** | `google/gemini-2.5-flash:free` via OpenRouter | Free tier · best quality · 50 RPD |
+| **LLM SDK** | `openai` (OpenRouter-compatible) | Single SDK for both models · standard interface |
+| **Backend** | FastAPI + Python 3.11 | Async endpoints · auto docs · Pydantic native |
+| **PDF → Image** | pdf2image + poppler | PIL images fed directly to Gemini Vision |
+| **Validation** | Pydantic + manual JSON parsing | Handles markdown-wrapped responses from OpenRouter |
+| **PDF Export** | reportlab + Noto fonts | Unicode support for Devanagari + Gurmukhi |
+| **Frontend** | Vanilla HTML / CSS / JS | No build step · instant deploy · zero dependencies |
+| **Design** | Sage & Ink system | Earthy greens · accessible contrast ratios · WCAG AA |
+| **Backend host** | Hugging Face Spaces (Docker) | Free · persistent · full Dockerfile control |
+| **Frontend host** | Vercel | Free CDN · GitHub auto-deploy |
+| **CI/CD** | GitHub Actions | Push to `main` → auto-deploy to HF Spaces |
+
 ---
- 
+
 ## 📁 Project Structure
- 
+
 ```
 lab-report-explainer/
 │
@@ -156,162 +158,248 @@ lab-report-explainer/
 │       └── deploy.yml          # CI/CD: push to HF Spaces on merge to main
 │
 ├── backend/
-│   ├── main.py                 # FastAPI app + all endpoints + CORS
-│   ├── extractor.py            # PDF → PNG → Gemini Vision → Pydantic JSON
-│   ├── rules.py                # Deterministic flag logic (zero LLM calls)
-│   ├── explainer.py            # Batch explanation + chat with guardrails
-│   ├── exporter.py             # reportlab PDF generation with Unicode fonts
-│   ├── ranges_fallback.py      # Fallback reference ranges (30 common tests)
-│   ├── units.py                # Unit alias normalisation (gm% → g/dL etc.)
-│   └── requirements.txt
+│   ├── main.py                 # FastAPI app — 6 endpoints, CORS, StaticFiles, lifespan
+│   ├── extractor.py            # PDF → images → Gemini Vision → Pydantic validation
+│   ├── rules.py                # Deterministic flagging engine — zero LLM calls
+│   ├── explainer.py            # Batch explanations + RAG chat with guardrails
+│   ├── exporter.py             # reportlab PDF export — Unicode-safe
+│   ├── ranges_fallback.py      # 30 common tests, gender-aware fallback ranges
+│   ├── units.py                # Medical unit alias normalisation (gm% → g/dL etc.)
+│   ├── generate_samples.py     # Generates 4 demo PDFs at startup → static/
+│   ├── requirements.txt
+│   └── static/                 # Auto-generated on first startup
+│       ├── sample_healthy.pdf
+│       ├── sample_diabetic.pdf
+│       ├── sample_lipids.pdf
+│       └── sample_anemia.pdf
 │
 ├── frontend/
-│   ├── index.html              # Full page structure (semantic HTML5)
-│   ├── style.css               # Sage & Ink design system
-│   └── app.js                  # State management + API calls + DOM rendering
+│   ├── index.html              # Full page — upload, results, chat, compare, export
+│   ├── style.css               # Sage & Ink design system — WCAG AA accessible
+│   └── app.js                  # State, API calls, rendering, preset system
 │
-├── Dockerfile                  # python:3.11-slim + poppler + Noto fonts
-├── .env.example                # API key template
-└── .gitignore
+├── Dockerfile                  # python:3.11-slim + poppler + fonts-noto
+├── requirements.txt
+├── .env.example
+├── .gitignore
+└── README.md
 ```
- 
+
 ---
- 
+
 ## 🚀 Running Locally
- 
+
 ### Prerequisites
+
 - Python 3.11+
 - poppler (`brew install poppler` / `sudo apt install poppler-utils`)
-- Gemini API key — free at [aistudio.google.com](https://aistudio.google.com/app/apikey)
+- Noto fonts (`sudo apt install fonts-noto fonts-noto-extra`)
+- OpenRouter API key — free account at [openrouter.ai](https://openrouter.ai), no credit card required
+
 ### Setup
- 
+
 ```bash
-# 1. Clone the repository
+# 1. Clone
 git clone https://github.com/Gagandeep61/lab-report-explainer.git
 cd lab-report-explainer
- 
+
 # 2. Create virtual environment
 cd backend
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
- 
+
 # 3. Install dependencies
 pip install -r requirements.txt
- 
-# 4. Set up API key
+
+# 4. Set API key
 cp ../.env.example .env
-# Edit .env and add: GEMINI_API_KEY=your_key_here
- 
-# 5. Run the backend
+# Edit .env: OPENROUTER_API_KEY=sk-or-v1-...
+
+# 5. (Optional) Pre-generate sample PDFs
+python generate_samples.py
+
+# 6. Start backend
 uvicorn main:app --reload --port 8000
 ```
- 
-Open `frontend/index.html` in your browser. The status dot turns green when the backend responds.
- 
+
 **Verify setup:**
 ```
-http://localhost:8000/health  →  {"status":"ok","api_key_set":true}
+http://localhost:8000/health  →  {"status": "ok", "api_key_set": true}
 http://localhost:8000/docs    →  Interactive API documentation
 ```
- 
+
+Open `frontend/index.html` via Live Server (VS Code) or any local static server. The status dot turns green when the backend responds.
+
+> ⚠️ Do NOT open `index.html` directly via `file://` — CORS will block API calls. Use `localhost`.
+
 ---
- 
+
 ## 🔌 API Reference
- 
-| Endpoint | Method | Description |
+
+| Method | Endpoint | Description |
 |---|---|---|
-| `/analyze` | POST | Full pipeline: extract → flag → explain |
-| `/explain` | POST | Re-explain with different language or view mode (no re-extraction) |
-| `/compare` | POST | Diff two PDF reports — improved / worsened / stable |
-| `/chat` | POST | Bounded RAG chat (8-turn, guardrailed) |
-| `/export` | POST | Generate Unicode-safe PDF report card |
-| `/health` | GET | Health check + config verification |
- 
-All endpoints accept `multipart/form-data`. Full interactive docs at `/docs`.
- 
+| `POST` | `/analyze` | Full pipeline: extract PDF → flag → explain |
+| `POST` | `/explain` | Re-explain already-flagged tests (language/mode change, no re-extraction) |
+| `POST` | `/compare` | Extract + flag two PDFs, return diff |
+| `POST` | `/chat` | Bounded RAG chat against report context |
+| `POST` | `/export` | Generate downloadable Unicode-safe PDF report card |
+| `GET` | `/health` | Backend status + model config |
+
+All endpoints accept `multipart/form-data`. Interactive docs at `/docs`.
+
+**`/analyze` — Request**
+```
+file:     PDF upload
+language: "english" | "hindi" | "punjabi"   (default: english)
+mode:     "patient" | "doctor"              (default: patient)
+```
+
+**`/analyze` — Response shape**
+```json
+{
+  "tests": [
+    {
+      "test_name": "HbA1c",
+      "value": 8.1,
+      "unit": "%",
+      "reference_range": "4.0 - 5.6",
+      "ref_min": 4.0,
+      "ref_max": 5.6,
+      "flag": "See Doctor",
+      "gauge_pct": 100,
+      "explanation": "...",
+      "doctor_questions": ["...", "..."]
+    }
+  ],
+  "patient": { "age": 52, "gender": "male" },
+  "total": 10,
+  "flagged_count": 6
+}
+```
+
 ---
- 
+
+## 🎮 Demo Preset System
+
+Ships with a hybrid demo system — zero API calls required for basic testing.
+
+**JSON Presets (instant)**
+
+| Profile | Patient | Key Findings |
+|---|---|---|
+| Healthy Adult | Priya, 25F | All 10 tests normal |
+| Diabetic Pattern | Rajesh, 52M | HbA1c 8.1% · Glucose 162 · LDL 142 · TG 285 |
+| Lipid Issues | Amit, 45M | LDL 188 · HDL 32 · TG 320 · VLDL 64 |
+| Anaemia + Deficiencies | Sunita, 34F | Hb 8.9 · Ferritin 6 · B12 142 · Vit D 11 |
+
+**Sample PDFs (full pipeline)**
+Download a sample PDF → upload via normal file input → tests full extraction, flagging, and explanation pipeline end-to-end.
+
+**Compare Presets (instant)**
+- Diabetes: Before & After Treatment — all 5 tests improved
+- Lipid Panel: Gradual Worsening — all 5 tests worsened
+
+---
+
 ## ⚙️ CI/CD Pipeline
- 
-Every push to `main` that touches backend files auto-deploys to Hugging Face Spaces. Frontend auto-deploys to Vercel via GitHub integration.
- 
+
 ```
 git push origin main
     │
-    ├── GitHub Actions triggers (changes to backend/** or Dockerfile)
+    ├── GitHub Actions (backend/** or Dockerfile changes)
     │       └── Pushes to HF Space git repo → Docker rebuild → Space restart
     │
     └── Vercel detects push → rebuilds frontend → CDN propagation
 ```
- 
+
 **One-time setup:**
 1. Get an HF token with Write access at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-2. Add as GitHub secret: Repo → Settings → Secrets → Actions → `HF_TOKEN`
-3. Connect GitHub repo to Vercel project for automatic frontend deploys
-> `GEMINI_API_KEY` lives in HF Space Settings → Variables. Never committed to the repository.
- 
+2. Add as GitHub secret: `Repo → Settings → Secrets → Actions → HF_TOKEN`
+3. Connect GitHub repo to Vercel for automatic frontend deploys
+
+> `OPENROUTER_API_KEY` lives exclusively in HF Space Secrets. Never committed to the repository.
+
 ---
- 
+
 ## 🧠 Key Learnings
- 
-**IDP pipeline design over model selection**
-The hardest part of this project was not choosing a model — it was designing the pipeline to handle real-world variation. Indian lab PDFs from five different labs have five completely different table structures. The lesson: for unstructured document processing, your parsing strategy matters more than your model choice. Gemini Vision absorbs all that variation in one prompt; regex would have needed 50 different rules.
- 
-**Deterministic logic and LLMs solve different problems**
-Early versions asked Gemini to decide whether values were normal. It hallucinated. The fix was architectural, not prompt-based: LLMs are good at extracting text from images and generating human-readable prose. They are unreliable at arithmetic. Routing `value > ref_max` to a Python comparison and leaving explanation generation to Gemini made both components more reliable.
- 
-**Batching API calls is a first-class design concern**
-With a 10 RPM limit, processing a 20-test report one call per test would take over 2 minutes and exceed the per-minute quota. Batching all explanation calls into one prompt reduced this to a single API hit with identical output quality. Quota management shaped the API design from the start.
- 
-**3-layer validation for LLM outputs**
-A single validation layer is not enough when the source is an LLM. Schema enforcement (via `response_schema`) catches structural errors. Pydantic field validators catch type errors like negative haemoglobin from a misread dash. A physiological plausibility dictionary catches values that pass the schema but are impossible for a living human — a haemoglobin of 1400 g/dL from misreading the platelet column. Each layer catches a different class of failure.
- 
-**Real-world data never matches your assumptions**
-The comma bug: `"4,000 - 10,000"` parsed as range 4–10, flagging a normal WBC as "See Doctor" on every SRL report. The fix was one regex line, but the lesson is that data from the real world — especially OCR'd data from medical documents — always has edge cases that synthetic test data misses. Testing against actual lab reports from multiple providers is non-negotiable.
- 
+
+**1. LLMs and arithmetic are fundamentally incompatible.**
+Even frontier models hallucinate numerical comparisons under pressure. Separating extraction (LLM) from evaluation (Python) is not a performance optimisation — it is the only correct architecture for medical data.
+
+**2. Free-tier rate limits require upfront design, not retrofitting.**
+Building with 50 RPD from day one forced the batch explanation architecture. The result is also cheaper and faster than per-test calls would be on paid tiers.
+
+**3. Indian lab PDF formats are a parsing problem, not just a parsing task.**
+Comma-formatted large numbers, descriptive zone labels inline with ranges, missing range columns, OCR em-dashes, and lakh notation all required explicit handling. Generic parsers fail silently on all of these.
+
+**4. Real-world data never matches your assumptions.**
+The comma bug: `"4,000 - 10,000"` parsed as range 4–10, flagging a normal WBC as "See Doctor" on every SRL report. The fix was one regex line, but the lesson is that testing against actual lab reports from multiple providers is non-negotiable.
+
+**5. Accessibility is not a post-launch concern.**
+WCAG contrast failures, missing focus rings, and non-functional keyboard navigation were found in the initial CSS. Fixed before launch. Screen reader compatibility and keyboard navigation are first-class requirements in health tools.
+
+**6. OpenRouter adds a valuable abstraction layer.**
+Switching extraction models required changing one string. Same SDK, same error handling, same retry logic.
+
 ---
- 
+
+## 🐛 Notable Bugs Fixed
+
+| Bug | Impact | Fix |
+|---|---|---|
+| Comma-formatted numbers — `"4,000 - 10,000"` parsed as 4–10 | WBC 7200 flagged See Doctor | Strip digit-comma-digit before range parse |
+| Descriptive range labels — unit stripper hit `N` in "Normal" | HbA1c 6.8% silently Normal | Strip label words first, then unit suffixes |
+| PDF black squares for Hindi/Punjabi | Helvetica Latin-only → tofu on non-Latin chars | Dockerfile installs Noto fonts, registered at startup |
+| No fallback ranges when PDF omits range column | Everything silently Normal | Created `ranges_fallback.py` |
+| `rules.py` div-by-zero when `ref_min = 0` | `/analyze` crashed on bilirubin fractions | Guard: `if ref_min == 0: return "Normal"` |
+| `explainer.py` chat stuffed into single user message | Safety guardrails partially ignored | Proper system / user / assistant message roles |
+| `app.js` gauge_pct unclamped | Bar overflows container on extreme values | `Math.min(100, Math.max(0, gauge_pct))` |
+| `app.js` aria-pressed never updated | Screen readers announce stale toggle state | Sync attribute on every toggle click |
+| `style.css` disabled button contrast 2.8:1 | Fails WCAG AA (requires 4.5:1) | `#2E5010` on `#C0DD97` → 4.6:1 |
+
+---
+
 ## 🔒 Safety & Ethics
- 
-- **No diagnosis**: Every output ends with "consult your doctor." The guardrail is hardcoded in Python, not just in the prompt — it cannot be bypassed by prompt injection.
-- **No real patient data in demos**: Only synthetic reports are used for demonstration. Free-tier Gemini may use inputs to improve Google's models — real patient data should never be sent to a free-tier API.
-- **LLM never makes medical decisions**: The rules engine is deterministic Python. `value > ref_max` is never evaluated by a language model.
+
+- **No diagnosis.** The word "diagnosis" does not appear in any prompt or response. Every output ends with a physician consultation instruction.
+- **Guardrail in Python, not prompt.** The medical disclaimer is appended in `explainer.py` regardless of model output — it cannot be removed by prompt injection.
+- **LLM never makes medical decisions.** `value > ref_max` is Python. Never LLM.
+- **8-turn chat cap enforced in JavaScript** before any API call is made.
+- **No patient data stored.** PDFs processed in memory and discarded after response.
+- **No real patient data in demos.** Only synthetic reports used. Free-tier models may use inputs for training — real patient data should never be sent to free-tier APIs.
+
 ---
- 
-## 🗺️ System Limitations & Future Architecture
- 
-**Unit conversion (planned)**
-The current system normalises unit aliases (`gm%` → `g/dL`) but does not perform chemical unit conversion (`mmol/L` → `mg/dL`). This requires per-analyte molecular weight data. The next step is a canonical conversion layer using the `pint` library, enabling correct handling of SI-unit reports common in hospital systems integrated with international standards.
- 
-**Low-quality scan handling (planned)**
-A dual-pass pipeline is planned: if the first extraction returns fewer than N tests or triggers plausibility bounds, a second pass runs at 300 DPI with a more conservative prompt. This cross-verification pattern is standard in enterprise IDP systems and would handle the faded/skewed scans that currently produce incomplete extractions.
- 
-**Longitudinal tracking (planned)**
-The current system processes one report per session with no persistence. The next version stores extracted JSON in MongoDB Atlas, enabling time-series visualisation of biomarker trends and Prophet-based forecasting to predict whether values like HbA1c are approaching clinical thresholds before they are breached.
- 
-**FHIR-compliant reference ranges (planned)**
-Connecting to a LOINC-compatible reference range API would replace the static fallback dictionary with dynamically fetched, population-stratified normals that account for age, sex, ethnicity, and clinical context — necessary for accurate interpretation across diverse patient demographics.
- 
+
+## 🗺️ Future Scope
+
+| Feature | Approach |
+|---|---|
+| **mmol/L ↔ mg/dL conversion** | `pint` library + molecular weight lookup per analyte |
+| **Age-aware paediatric ranges** | Extend `ranges_fallback.py` with age-band tiers (0–12, 13–17, 18+) |
+| **Low-quality scan handling** | Dual-pass pipeline: if extraction returns < N tests, retry at 300 DPI |
+| **Longitudinal tracking** | MongoDB Atlas for time-series biomarker trends + Prophet forecasting |
+| **FHIR-compliant ranges** | LOINC-compatible reference range API — population-stratified, age/sex/ethnicity aware |
+| **WhatsApp delivery** | Twilio API → send PDF summary to patient's phone after analysis |
+
 ---
- 
+
 ## 👨‍💻 Author
- 
+
 **Gagandeep Singh**
- 
+
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/gagandeep-singh-517155319)
 [![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=flat&logo=github)](https://github.com/Gagandeep61)
- 
+
 ---
- 
+
 ## 📄 License
- 
+
 MIT License — see [LICENSE](LICENSE) for details.
- 
+
 ---
- 
+
 <div align="center">
-<sub>Built with Gemini 2.5 Flash · FastAPI · Hugging Face Spaces · Vercel</sub>
+<sub>Built with OpenRouter · Gemini Vision · FastAPI · Hugging Face Spaces · Vercel</sub>
 <br>
-<sub>Not a substitute for medical advice. Always consult a qualified physician.</sub>
+<sub>⚠️ Not a substitute for medical advice. Always consult a qualified physician before making health decisions.</sub>
 </div>
- 
