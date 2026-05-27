@@ -52,6 +52,7 @@ app.add_middleware(
 )
 
 # Serve generated sample PDFs at /static/sample_*.pdf
+os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
