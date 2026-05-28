@@ -3,6 +3,8 @@ uvicorn[standard]
 openai
 pdf2image
 Pillow
+pymupdf
+requests
 python-multipart
 python-dotenv
 pydantic

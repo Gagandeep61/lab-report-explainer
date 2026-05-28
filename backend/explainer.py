@@ -1,4 +1,14 @@
-# explainer.py — explanation + chat via OpenRouter (gemini-2.5-flash:free)
+# explainer.py — explanation + chat via Groq + Sarvam translation
+#
+# WHY GROQ: OpenRouter free tier = 50 RPD for explanation model.
+# Groq free tier = 14,400 RPD for llama-3.3-70b-versatile.
+# Same openai-compatible SDK — 2-line change, 288x more headroom.
+#
+# LANGUAGE FLOW:
+#   Always generate explanations in English (Groq — best quality, high quota).
+#   If user selected Hindi/Punjabi → translate via Sarvam AI (Indian language specialist).
+#   Sarvam quality >> general LLM for Hindi/Punjabi medical text.
+#   If SARVAM_API_KEY missing → silently serve English (no crash).
 
 import json
 import os
@@ -10,9 +20,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from openai import OpenAI
+from translator import translate_tests, translate_text
 
 _client: Optional[OpenAI] = None
-EXPLANATION_MODEL = "google/gemini-2.5-flash:free"
+EXPLANATION_MODEL = "llama-3.3-70b-versatile"   # Groq — 14,400 RPD free
 
 LANGUAGE_NAMES = {
     "english": "English",
@@ -24,35 +35,39 @@ LANGUAGE_NAMES = {
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        api_key = os.getenv("OPENROUTER_API_KEY")
+        api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENROUTER_API_KEY not set. Check .env and HF secrets.")
+            raise RuntimeError("GROQ_API_KEY not set. Add to .env and HF secrets.")
         _client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
+            base_url="https://api.groq.com/openai/v1",
             api_key=api_key,
         )
     return _client
 
 
-def _call_openrouter_safe(prompt: str) -> str:
+def _call_groq_safe(messages: list[dict]) -> str:
     client = _get_client()
     for attempt in range(2):
         try:
             response = client.chat.completions.create(
                 model=EXPLANATION_MODEL,
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
+                temperature=0.3,
             )
             return response.choices[0].message.content
         except Exception as e:
             err = str(e).lower()
-            is_rate_limit = "429" in str(e) or "quota" in err or "rate" in err or "exhausted" in err
-            if is_rate_limit and attempt == 0:
-                print("[explainer] Rate limit. Sleeping 62s…")
-                time.sleep(62)
+            is_rate = "429" in str(e) or "rate" in err or "quota" in err
+            if is_rate and attempt == 0:
+                print("[explainer] Groq rate limit — sleeping 5s")
+                time.sleep(5)
                 continue
             raise
-    raise RuntimeError("OpenRouter call failed after retry.")
+    raise RuntimeError("Groq call failed after retry.")
 
+
+# ── Prompts ───────────────────────────────────────────────────────────────────
+# Always in English — Sarvam handles translation separately.
 
 PATIENT_PROMPT = """You are a health literacy assistant. The patient is {age} years old, {gender}.
 
@@ -61,7 +76,7 @@ These are their lab test results (flags already determined by the rules engine �
 
 For EVERY test in this array, write:
 
-1. "explanation": Exactly 2 sentences in plain {language}.
+1. "explanation": Exactly 2 sentences in plain English.
    Sentence 1: What this specific test measures (simple, no jargon).
    Sentence 2: What this specific value means for this patient — reference their actual number.
    If flag is "Normal": second sentence should be reassuring.
@@ -112,16 +127,14 @@ STRICT RULES — follow without exception:
    "Always discuss your results with your doctor before making any decisions."
 7. Keep responses to 3–5 sentences maximum.
 
-Respond in {language}."""
+Respond in English. (Translation handled separately if needed.)"""
 
 
-def _parse_explanation_json(raw: str, expected_count: int, original_tests: list[dict]) -> list[dict]:
-    """
-    FIX: fallback array now copies test_name from original_tests instead of blank string.
-    Previously all failed tests mapped to the same "" key in exp_map.
-    """
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _parse_explanation_json(raw: str, original_tests: list[dict]) -> list[dict]:
     cleaned = re.sub(r'^```(?:json)?\s*', '', raw.strip(), flags=re.MULTILINE)
-    cleaned = re.sub(r'\s*```$', '', cleaned, flags=re.MULTILINE).strip()
+    cleaned = re.sub(r'\s*```$',          '', cleaned,     flags=re.MULTILINE).strip()
 
     try:
         data = json.loads(cleaned)
@@ -135,14 +148,10 @@ def _parse_explanation_json(raw: str, expected_count: int, original_tests: list[
             except json.JSONDecodeError:
                 pass
 
-    print(f"[explainer] Could not parse JSON. Raw (first 300): {raw[:300]}")
-    # FIX: use real test_name from original_tests so exp_map lookup succeeds per-test
+    print(f"[explainer] JSON parse failed. Raw (first 300): {raw[:300]}")
+    # Use real test_name from original so exp_map lookup works per-test
     return [
-        {
-            "test_name":       t.get("test_name", ""),
-            "explanation":     "Explanation temporarily unavailable.",
-            "doctor_questions": [],
-        }
+        {"test_name": t.get("test_name", ""), "explanation": "Explanation temporarily unavailable.", "doctor_questions": []}
         for t in original_tests
     ]
 
@@ -157,23 +166,28 @@ def _tests_summary(tests: list[dict]) -> list[dict]:
                 t.get("reference_range")
                 or f"{t.get('ref_min', '')}–{t.get('ref_max', '')}"
             ),
-            "flag":            t.get("flag", "Normal"),
+            "flag": t.get("flag", "Normal"),
         }
         for t in tests
     ]
 
 
+# ── Public functions ──────────────────────────────────────────────────────────
+
 def generate_explanations_batch(
-    tests: list[dict],
-    age: int,
-    gender: str,
+    tests:    list[dict],
+    age:      int,
+    gender:   str,
     language: str = "english",
-    mode: str = "patient",
+    mode:     str = "patient",
 ) -> list[dict]:
+    """
+    Generate explanations for all tests in English via Groq,
+    then translate to Hindi/Punjabi via Sarvam if needed.
+    """
     if not tests:
         return tests
 
-    lang_str = LANGUAGE_NAMES.get(language, "English")
     summary  = _tests_summary(tests)
     template = PATIENT_PROMPT if mode == "patient" else DOCTOR_PROMPT
 
@@ -182,15 +196,14 @@ def generate_explanations_batch(
         gender=gender,
         tests_json=json.dumps(summary, ensure_ascii=False),
         count=len(tests),
-        language=lang_str,
     )
 
-    raw          = _call_openrouter_safe(prompt)
-    # FIX: pass original tests so fallback can copy real test_name values
-    explanations = _parse_explanation_json(raw, len(tests), tests)
+    # Always generate in English (Groq handles it best)
+    raw          = _call_groq_safe([{"role": "user", "content": prompt}])
+    explanations = _parse_explanation_json(raw, tests)
     exp_map      = {e.get("test_name", "").strip().lower(): e for e in explanations}
 
-    return [
+    explained = [
         {
             **t,
             "explanation":      exp_map.get(t.get("test_name", "").strip().lower(), {})
@@ -201,53 +214,47 @@ def generate_explanations_batch(
         for t in tests
     ]
 
+    # Translate to Hindi/Punjabi via Sarvam if needed
+    if language != "english":
+        explained = translate_tests(explained, language)
+
+    return explained
+
 
 def generate_chat_response(
-    message: str,
+    message:        str,
     report_context: str,
-    history: list[dict],
-    age: int,
-    gender: str,
-    language: str = "english",
+    history:        list[dict],
+    age:            int,
+    gender:         str,
+    language:       str = "english",
 ) -> str:
-    lang_str = LANGUAGE_NAMES.get(language, "English")
-
+    """
+    Generate chat response in English via Groq,
+    then translate via Sarvam if user is in Hindi/Punjabi mode.
+    """
     system = CHAT_SYSTEM.format(
         age=age,
         gender=gender,
         report_context=report_context,
-        language=lang_str,
     )
 
-    # FIX: use proper role-separated messages instead of stuffing everything
-    # into one user message — improves instruction-following and safety guardrails
     messages = [{"role": "system", "content": system}]
     for turn in history[-6:]:
         messages.append({"role": turn["role"], "content": turn["content"]})
     messages.append({"role": "user", "content": message})
 
-    client = _get_client()
-    for attempt in range(2):
-        try:
-            response = client.chat.completions.create(
-                model=EXPLANATION_MODEL,
-                messages=messages,
-            )
-            reply = response.choices[0].message.content
-            break
-        except Exception as e:
-            err = str(e).lower()
-            is_rate_limit = "429" in str(e) or "quota" in err or "rate" in err or "exhausted" in err
-            if is_rate_limit and attempt == 0:
-                print("[explainer] Chat rate limit. Sleeping 62s…")
-                time.sleep(62)
-                continue
-            raise
-    else:
-        raise RuntimeError("OpenRouter chat call failed after retry.")
+    reply = _call_groq_safe(messages)
 
+    # Ensure disclaimer present
     disclaimer = "Always discuss your results with your doctor before making any decisions."
     if disclaimer.lower() not in reply.lower():
         reply = reply.rstrip() + f"\n\n{disclaimer}"
 
-    return reply.strip()
+    reply = reply.strip()
+
+    # Translate if needed
+    if language != "english":
+        reply = translate_text(reply, language)
+
+    return reply

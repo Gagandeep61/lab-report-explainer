@@ -21,11 +21,11 @@ from rules import apply_rules, compare_two_reports
 from generate_samples import generate_all_samples
 
 
-# ── Lifespan: generate sample PDFs once on startup ───────────────────────────
+# ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    generate_all_samples()   # skips files that already exist — fast on restart
+    generate_all_samples()
     yield
 
 
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Lab Report Explainer",
     description="AI-powered plain-language interpretation of blood test reports.",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -44,14 +44,11 @@ app.add_middleware(
         "https://lab-report-explainer-phi.vercel.app",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
-        # FIX: removed "null" origin — allowed file:// requests (security risk).
-        # Live Server uses localhost, which is already whitelisted above.
     ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Serve generated sample PDFs at /static/sample_*.pdf
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -80,7 +77,6 @@ async def analyze_report(
     language: str        = Form("english"),
     mode:     str        = Form("patient"),
 ):
-    """Full pipeline: extract → flag → explain. Age and gender auto-extracted from PDF."""
     language = _validate_language(language)
     mode     = _validate_mode(mode)
 
@@ -89,8 +85,7 @@ async def analyze_report(
 
     pdf_bytes = await file.read()
 
-    # FIX: reject oversized uploads before sending to extraction model
-    MAX_SIZE = 20 * 1024 * 1024  # 20 MB
+    MAX_SIZE = 20 * 1024 * 1024
     if len(pdf_bytes) > MAX_SIZE:
         raise HTTPException(status_code=413, detail="File too large. Maximum size is 20 MB.")
 
@@ -131,7 +126,6 @@ async def explain_report(
     language: str = Form("english"),
     mode:     str = Form("patient"),
 ):
-    """Re-explain already-flagged tests with different language or view mode."""
     gender   = _validate_gender(gender)
     language = _validate_language(language)
     mode     = _validate_mode(mode)
@@ -143,8 +137,7 @@ async def explain_report(
 
     try:
         explained = generate_explanations_batch(flagged_tests, age, gender, language, mode)
-    except Exception as e:
-        # FIX: return graceful fallback instead of 500 — matches /analyze behaviour
+    except Exception:
         explained = [
             {**t, "explanation": "Explanation temporarily unavailable.", "doctor_questions": []}
             for t in flagged_tests
@@ -158,7 +151,6 @@ async def compare_reports(
     file1: UploadFile = File(...),
     file2: UploadFile = File(...),
 ):
-    """Extract both PDFs, flag both, return diff."""
     bytes1 = await file1.read()
     bytes2 = await file2.read()
 
@@ -195,7 +187,6 @@ async def chat(
     gender:         str = Form("male"),
     language:       str = Form("english"),
 ):
-    """Bounded RAG chat — guardrails enforced server-side."""
     gender   = _validate_gender(gender)
     language = _validate_language(language)
 
@@ -225,7 +216,6 @@ async def export_pdf(
     age:    int = Form(30),
     gender: str = Form("male"),
 ):
-    """Generate and stream a PDF report card."""
     gender = _validate_gender(gender)
 
     try:
@@ -248,8 +238,26 @@ async def export_pdf(
 @app.get("/health")
 async def health():
     return {
-        "status":            "ok",
-        "openrouter_set":    bool(os.getenv("OPENROUTER_API_KEY")),
-        "extraction_model":  "google/gemini-2.0-flash-exp:free",
-        "explanation_model": "google/gemini-2.5-flash:free",
+        "status":             "ok",
+        # Extraction
+        "openrouter_set":     bool(os.getenv("OPENROUTER_API_KEY")),
+        "vision_model":       "google/gemini-2.0-flash-exp:free (OpenRouter — scanned PDFs only)",
+        "text_extract_model": "llama-3.1-8b-instant (Groq — digital PDFs)",
+        # Explanation + Chat
+        "groq_set":           bool(os.getenv("GROQ_API_KEY")),
+        "explanation_model":  "llama-3.3-70b-versatile (Groq — 14,400 RPD)",
+        # Translation
+        "sarvam_set":         bool(os.getenv("SARVAM_API_KEY")),
+        "translation":        "Sarvam AI mayura:v1 (Hindi/Punjabi)",
+    }
+
+
+@app.get("/")
+async def root():
+    return {
+        "name":    "Lab Report Explainer API",
+        "version": "1.2.0",
+        "status":  "ok",
+        "docs":    "/docs",
+        "health":  "/health",
     }
