@@ -9,7 +9,7 @@
 //   - reExplain debounced to prevent race condition
 //   - Full hybrid preset system (JSON presets + PDF download links)
 
-const API_BASE = "https://lab-report-explainer-phi.vercel.app".replace(/\/$/, "");
+const API_BASE = "https://gagan61-lab-report-explainer.hf.space".replace(/\/$/, "");
 // If running backend locally: const API_BASE = "http://localhost:8000";
 
 // FIX: single constant — previously 8 was hardcoded in 3 different places
