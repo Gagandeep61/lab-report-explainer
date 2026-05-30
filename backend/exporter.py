@@ -1,7 +1,7 @@
-# exporter.py — PDF export using reportlab
-# FIX 1: generate_pdf() now correctly unpacks patient dict (was NameError crash)
-# FIX 2: colWidths use mm units instead of percentage strings (unreliable in reportlab)
-# FIX 3: removed dead non_latin_exists variable
+# exporter.py — PDF export using reportlab (English only)
+# LOGIC: Detects Devanagari (Hindi) and Gurmukhi (Punjabi) Unicode ranges.
+# If found, replaces with English notice instead of broken glyphs.
+# reportlab has NO OpenType shaping engine — Indic scripts render as garbage.
 
 import io
 import os
@@ -19,7 +19,41 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
 
-# ── Unicode font setup ────────────────────────────────────────────────────────
+# ── Indic script detection ────────────────────────────────────────────────────
+
+def _contains_indic(text: str) -> bool:
+    """
+    Detect Devanagari (Hindi) or Gurmukhi (Punjabi) characters.
+    Unicode ranges:
+      Devanagari: U+0900 – U+097F
+      Gurmukhi:   U+0A00 – U+0A7F
+    
+    reportlab cannot shape these scripts — no OpenType engine.
+    Detection allows us to replace with clean English notice instead of garbage.
+    """
+    if not text:
+        return False
+    for ch in text:
+        cp = ord(ch)
+        if 0x0900 <= cp <= 0x097F:   # Devanagari
+            return True
+        if 0x0A00 <= cp <= 0x0A7F:   # Gurmukhi
+            return True
+    return False
+
+
+def _tests_have_indic(tests: list[dict]) -> bool:
+    """Check if any test has Indic text in explanation or doctor_questions."""
+    for t in tests:
+        if _contains_indic(t.get("explanation", "")):
+            return True
+        for q in (t.get("doctor_questions") or []):
+            if _contains_indic(q):
+                return True
+    return False
+
+
+# ── Font setup ───────────────────────────────────────────────────────────────
 
 def _register_noto() -> tuple[str, str]:
     search_patterns = [
@@ -60,23 +94,24 @@ def _register_noto() -> tuple[str, str]:
 
 
 BODY_FONT, BOLD_FONT = _register_noto()
-UNICODE_AVAILABLE = BODY_FONT == "NotoSans"
 
 # A4 printable width: 210mm - 20mm left - 20mm right = 170mm
 _PW = 170 * mm
 
 
 def _safe_text(text: str) -> str:
-    if UNICODE_AVAILABLE:
+    """
+    Return English text as-is.
+    Replace Indic script with fallback notice — broken rendering is worse than clear message.
+    """
+    if not text:
         return text
-    try:
-        text.encode("latin-1")
-        return text
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return "[Switch to English view for PDF export — Hindi/Punjabi not supported in this PDF.]"
+    if _contains_indic(text):
+        return "[Switch to English view and re-download PDF for full content.]"
+    return text
 
 
-# ── Colour palette ────────────────────────────────────────────────────────────
+# ── Colours ───────────────────────────────────────────────────────────────────
 C_PRIMARY    = colors.HexColor("#1C2B1A")
 C_MUTED      = colors.HexColor("#5F7A5C")
 C_CARD_BG    = colors.HexColor("#EAF3DE")
@@ -116,11 +151,9 @@ def _badge(flag: str) -> str:
 
 def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     """
-    Generate a downloadable PDF summary.
-    FIX: unpack patient dict at the top — previously used undefined age/gender variables.
-    FIX: colWidths use mm values — percentage strings are unreliable across reportlab versions.
+    Generate downloadable PDF summary.
+    English only — Indic script detected and replaced with notice.
     """
-    # FIX: extract age and gender from patient dict
     age    = patient.get("age") or "—"
     gender = patient.get("gender") or "—"
 
@@ -140,22 +173,14 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     ))
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_CARD_BDR, spaceAfter=12))
 
-    # ── Unicode notice ────────────────────────────────────────────────────────
-    if not UNICODE_AVAILABLE:
-        def _has_non_latin(t):
-            try:
-                (t.get("explanation", "") + " ".join(t.get("doctor_questions", []))).encode("latin-1")
-                return False
-            except (UnicodeEncodeError, UnicodeDecodeError):
-                return True
-
-        if any(_has_non_latin(t) for t in tests):
-            story.append(Paragraph(
-                "⚠ This report was generated with Hindi or Punjabi explanations. "
-                "PDF export supports English only — switch to English view and re-export for full content.",
-                s["notice"]
-            ))
-            story.append(Spacer(1, 8))
+    # ── Indic notice (shown if Hindi/Punjabi detected) ───────────────────────
+    if _tests_have_indic(tests):
+        story.append(Paragraph(
+            "⚠ This report was viewed in Hindi or Punjabi. "
+            "PDF export supports English only — switch to English view and re-download for full explanations.",
+            s["notice"]
+        ))
+        story.append(Spacer(1, 8))
 
     # ── Summary ───────────────────────────────────────────────────────────────
     total     = len(tests)
@@ -163,7 +188,6 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
     n_danger  = sum(1 for t in tests if t.get("flag") == "See Doctor")
     n_normal  = total - n_caution - n_danger
 
-    # FIX: colWidths use mm values instead of percentage strings
     summary_table = Table(
         [["Total Tests", "Normal", "Caution", "Needs Attention"],
          [str(total), str(n_normal), str(n_caution), str(n_danger)]],
@@ -206,7 +230,6 @@ def generate_pdf(tests: list[dict], patient: dict) -> bytes:
             _badge(t.get("flag", "Normal")),
         ])
 
-    # FIX: colWidths use mm values — 40% / 20% / 25% / 15% of 170mm
     tbl = Table(rows, colWidths=[_PW * 0.40, _PW * 0.20, _PW * 0.25, _PW * 0.15])
     row_styles = [
         ("FONTNAME",      (0,0), (-1,0),  BOLD_FONT), ("FONTSIZE",  (0,0), (-1,0),  8),
